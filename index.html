@@ -162,6 +162,10 @@
   .modal textarea.autosize{
     resize:none; overflow:hidden; line-height:1.5;
   }
+  .subguide-list{ display:flex; flex-direction:column; gap:8px; margin-bottom:10px; }
+  .subguide-row{ display:flex; gap:6px; }
+  .subguide-row input{ flex:1; margin-bottom:0; }
+  .subguide-row button{ flex-shrink:0; padding:0 12px; }
   .modal .req::after{ content:" *"; color:var(--danger); }
   .modal-actions{ display:flex; gap:8px; margin-top:6px; }
   .modal-actions .btn{ flex:1; text-align:center; }
@@ -216,11 +220,19 @@
 
       <div class="note">약속 날짜/시간 기준 오름차순으로 정렬됩니다. 시간이 지난 약속은 자동으로 보관함으로 옮겨집니다.</div>
     </div>
+
+    <div id="allContactsView" class="view">
+      <input type="text" id="allContactSearch" class="search-input" placeholder="검색 (이름, 전화번호, 소속, 특징 등)" oninput="renderAllContacts()">
+      <div id="allContactList"></div>
+      <div class="empty" id="allContactEmpty" style="display:none;">아직 등록된 연결자가 없습니다.</div>
+      <div class="note">다른 사람이 등록한 연결자를 포함해 전체를 볼 수 있습니다. 나와 관련된(메인·서브 인도자) 연결자는 색으로 구분됩니다.</div>
+    </div>
   </main>
 
   <nav class="tabbar">
     <button id="tabContacts" class="active" onclick="switchView('contacts')">연결자</button>
     <button id="tabAppt" onclick="switchView('appointments')">약속</button>
+    <button id="tabAllContacts" onclick="switchView('allContacts')">전체 연결 현황</button>
   </nav>
 </div>
 
@@ -239,7 +251,8 @@
     <label>메인 인도자</label>
     <input type="text" id="cMainGuide">
     <label>서브 인도자</label>
-    <input type="text" id="cSubGuide">
+    <div id="cSubGuideList" class="subguide-list"></div>
+    <button type="button" class="btn small" onclick="addSubGuideRow('')">+ 서브 인도자 추가</button>
     <label>연결 날짜</label>
     <input type="date" id="cConnectDate">
     <label>연결 시간</label>
@@ -332,7 +345,7 @@ function initApp(){
   if(appInitialized) return;
   appInitialized = true;
 
-  db.ref('contacts').on('value', snap=>{ contacts = snap.val() || {}; renderContacts(); renderAppointments(); });
+  db.ref('contacts').on('value', snap=>{ contacts = snap.val() || {}; renderContacts(); renderAppointments(); renderAllContacts(); });
   db.ref('appointments').on('value', snap=>{ appointments = snap.val() || {}; renderAppointments(); });
 
   // 데이터 변경이 없어도 시간은 계속 흐르므로, 지난 약속이 보관함으로 넘어가도록 주기적으로 다시 그려준다
@@ -342,8 +355,10 @@ function initApp(){
 function switchView(v){
   document.getElementById('contactsView').classList.toggle('active', v==='contacts');
   document.getElementById('appointmentsView').classList.toggle('active', v==='appointments');
+  document.getElementById('allContactsView').classList.toggle('active', v==='allContacts');
   document.getElementById('tabContacts').classList.toggle('active', v==='contacts');
   document.getElementById('tabAppt').classList.toggle('active', v==='appointments');
+  document.getElementById('tabAllContacts').classList.toggle('active', v==='allContacts');
 }
 
 function escapeHtml(str){
@@ -369,15 +384,28 @@ function matchesSearch(fields, term){
 }
 
 function isMainGuide(c){ return (c.mainGuide||'').trim().toLowerCase() === (currentUser||'').trim().toLowerCase(); }
-function isSubGuide(c){ return (c.subGuide||'').trim().toLowerCase() === (currentUser||'').trim().toLowerCase(); }
+function subGuideArray(c){
+  if(Array.isArray(c.subGuide)) return c.subGuide.filter(Boolean);
+  if(c.subGuide) return c.subGuide.split(',').map(s=>s.trim()).filter(Boolean);
+  return [];
+}
+function subGuideDisplay(c){ return subGuideArray(c).join(', '); }
+function isSubGuide(c){
+  const me = (currentUser||'').trim().toLowerCase();
+  return subGuideArray(c).some(s => s.trim().toLowerCase() === me);
+}
+
+function sortByConnectAt(ids){
+  return ids.slice().sort((a,b)=> (contacts[a].connectAt||'').localeCompare(contacts[b].connectAt||''));
+}
 
 function renderContacts(){
   const term = document.getElementById('contactSearch').value.trim();
   const allIds = Object.keys(contacts).filter(id => isMainGuide(contacts[id]) || isSubGuide(contacts[id]));
-  const ids = allIds.filter(id=>{
+  const ids = sortByConnectAt(allIds.filter(id=>{
     const c = contacts[id];
-    return matchesSearch([c.name, c.phone, c.org, c.topic, c.mainGuide, c.subGuide, c.connectAt ? c.connectAt.replace('T',' ') : '', c.trait], term);
-  });
+    return matchesSearch([c.name, c.phone, c.org, c.topic, c.mainGuide, subGuideDisplay(c), c.connectAt ? c.connectAt.replace('T',' ') : '', c.trait], term);
+  }));
   const list = document.getElementById('contactList');
   const emptyEl = document.getElementById('contactEmpty');
   emptyEl.style.display = ids.length ? 'none' : 'block';
@@ -395,7 +423,7 @@ function renderContacts(){
           ${row('소속', c.org)}
           ${row('공부주제', c.topic)}
           ${row('메인 인도자', c.mainGuide)}
-          ${row('서브 인도자', c.subGuide)}
+          ${row('서브 인도자', subGuideDisplay(c))}
           ${row('연결 날짜', c.connectAt ? c.connectAt.replace('T',' ') : '', true)}
           ${row('특징', c.trait)}
         </div>
@@ -405,6 +433,54 @@ function renderContacts(){
         </div>
       </div>`;
   }).join('');
+}
+
+function renderAllContacts(){
+  const term = document.getElementById('allContactSearch').value.trim();
+  const allIds = Object.keys(contacts);
+  const ids = sortByConnectAt(allIds.filter(id=>{
+    const c = contacts[id];
+    return matchesSearch([c.name, c.phone, c.org, c.topic, c.mainGuide, subGuideDisplay(c), c.connectAt ? c.connectAt.replace('T',' ') : '', c.trait], term);
+  }));
+  const list = document.getElementById('allContactList');
+  const emptyEl = document.getElementById('allContactEmpty');
+  emptyEl.style.display = ids.length ? 'none' : 'block';
+  emptyEl.textContent = allIds.length ? '검색 결과가 없습니다.' : '아직 등록된 연결자가 없습니다.';
+  list.innerHTML = ids.map((id,i)=>{
+    const c = contacts[id];
+    const guideClass = isMainGuide(c) ? ' guide-main' : (isSubGuide(c) ? ' guide-sub' : '');
+    const row = (label,val,mono)=> val ? `<div class="field-row"><div class="field-label">${label}</div><div class="field-val ${mono?'mono':''}">${escapeHtml(val)}</div></div>` : '';
+    return `
+      <div class="card${guideClass}">
+        <div class="tab" style="background:${tabColors[i%tabColors.length]}"></div>
+        <div class="card-inner">
+          ${row('이름', c.name)}
+          ${row('전화번호', c.phone, true)}
+          ${row('소속', c.org)}
+          ${row('공부주제', c.topic)}
+          ${row('메인 인도자', c.mainGuide)}
+          ${row('서브 인도자', subGuideDisplay(c))}
+          ${row('연결 날짜', c.connectAt ? c.connectAt.replace('T',' ') : '', true)}
+          ${row('특징', c.trait)}
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function addSubGuideRow(value){
+  const list = document.getElementById('cSubGuideList');
+  const row = document.createElement('div');
+  row.className = 'subguide-row';
+  row.innerHTML = `<input type="text" class="subguide-input" value="${escapeHtml(value)}"><button type="button" class="icon-btn delete" onclick="this.parentElement.remove()">✕</button>`;
+  list.appendChild(row);
+}
+function renderSubGuideRows(values){
+  const list = document.getElementById('cSubGuideList');
+  list.innerHTML = '';
+  (values.length ? values : ['']).forEach(v => addSubGuideRow(v));
+}
+function getSubGuideValues(){
+  return Array.from(document.querySelectorAll('#cSubGuideList .subguide-input')).map(i=>i.value.trim()).filter(Boolean);
 }
 
 function openContactModal(id){
@@ -417,7 +493,7 @@ function openContactModal(id){
     document.getElementById('cOrg').value = c.org || '';
     document.getElementById('cTopic').value = c.topic || '';
     document.getElementById('cMainGuide').value = c.mainGuide || '';
-    document.getElementById('cSubGuide').value = c.subGuide || '';
+    renderSubGuideRows(subGuideArray(c));
     const [connDate, connTime] = (c.connectAt || '').split('T');
     document.getElementById('cConnectDate').value = connDate || todayDateValue();
     document.getElementById('cConnectTime').value = connTime || nowTimeValue();
@@ -429,7 +505,7 @@ function openContactModal(id){
     document.getElementById('cOrg').value = '';
     document.getElementById('cTopic').value = '';
     document.getElementById('cMainGuide').value = currentUser || '';
-    document.getElementById('cSubGuide').value = '';
+    renderSubGuideRows([]);
     document.getElementById('cConnectDate').value = todayDateValue();
     document.getElementById('cConnectTime').value = nowTimeValue();
     document.getElementById('cTrait').value = '';
@@ -449,7 +525,7 @@ function saveContact(){
     org: document.getElementById('cOrg').value.trim(),
     topic: document.getElementById('cTopic').value.trim(),
     mainGuide: document.getElementById('cMainGuide').value.trim(),
-    subGuide: document.getElementById('cSubGuide').value.trim(),
+    subGuide: getSubGuideValues(),
     connectAt: [document.getElementById('cConnectDate').value, document.getElementById('cConnectTime').value].filter(Boolean).join('T'),
     trait: document.getElementById('cTrait').value.trim(),
     updatedBy: currentUser,
@@ -487,7 +563,7 @@ function renderAppointments(){
   const ids = allIds.filter(id=>{
     const a = appointments[id];
     const c = contacts[a.contactId];
-    return matchesSearch([c.name, c.phone, c.org, c.topic, c.mainGuide, c.subGuide, c.connectAt ? c.connectAt.replace('T',' ') : '', c.trait, a.apptDate, a.apptTime, a.memo], term);
+    return matchesSearch([c.name, c.phone, c.org, c.topic, c.mainGuide, subGuideDisplay(c), c.connectAt ? c.connectAt.replace('T',' ') : '', c.trait, a.apptDate, a.apptTime, a.memo], term);
   });
 
   const upcoming = [];
@@ -516,7 +592,7 @@ function renderAppointments(){
           ${row('소속', c.org)}
           ${row('공부주제', c.topic)}
           ${row('메인 인도자', c.mainGuide)}
-          ${row('서브 인도자', c.subGuide)}
+          ${row('서브 인도자', subGuideDisplay(c))}
           ${row('연결 날짜', c.connectAt ? c.connectAt.replace('T',' ') : '', true)}
           ${row('특징', c.trait)}
           ${row('약속 날짜', a.apptDate, true)}
@@ -560,7 +636,7 @@ function urgencyInfo(a){
 
 function populateContactSelect(selectedId){
   const sel = document.getElementById('aContactId');
-  const ids = Object.keys(contacts);
+  const ids = Object.keys(contacts).filter(id => isMainGuide(contacts[id]) || isSubGuide(contacts[id]) || id === selectedId);
   sel.innerHTML = ids.map(id=>`<option value="${id}" ${id===selectedId?'selected':''}>${escapeHtml(contacts[id].name)}</option>`).join('');
 }
 
