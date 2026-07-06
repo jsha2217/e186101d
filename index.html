@@ -1,0 +1,613 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>연결자 관리</title>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+<style>
+  :root{
+    --paper: #ECE9E1;
+    --paper-line: #D7D0BE;
+    --card: #FFFDF9;
+    --ink: #232A3B;
+    --ink-soft: #5B6376;
+    --tab: #45654B;
+    --tab-2: #8A6A3D;
+    --tab-3: #6C4F6E;
+    --tab-4: #3D5A73;
+    --danger: #A73B32;
+    --radius: 3px;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{ margin:0; padding:0; }
+  body{
+    background:var(--paper);
+    color:var(--ink);
+    font-family:'Inter', sans-serif;
+    min-height:100vh;
+    -webkit-font-smoothing:antialiased;
+  }
+
+  #lockScreen{
+    position:fixed; inset:0; background:var(--paper);
+    display:flex; align-items:center; justify-content:center;
+    z-index:100; padding:24px;
+  }
+  .lock-card{
+    background:var(--card); border:1px solid var(--paper-line);
+    border-radius:var(--radius); padding:32px 26px; width:100%; max-width:340px;
+    box-shadow:0 6px 20px rgba(35,42,59,0.08); text-align:center;
+  }
+  .lock-card .tab-mark{
+    width:40px;height:40px;border-radius:50%;background:var(--tab);
+    margin:0 auto 16px; display:flex;align-items:center;justify-content:center;
+    color:#fff;font-family:'Fraunces',serif;font-size:20px;
+  }
+  .lock-card h1{ font-family:'Fraunces',serif; font-size:20px; margin:0 0 6px;}
+  .lock-card p{ font-size:13px; color:var(--ink-soft); margin:0 0 18px;}
+  .lock-card label{ display:block; text-align:left; font-size:11.5px; color:var(--ink-soft); margin-bottom:4px; font-family:'JetBrains Mono',monospace;}
+  .lock-card input{
+    width:100%; padding:12px 14px; border:1px solid var(--paper-line);
+    border-radius:var(--radius); font-size:15px; margin-bottom:14px; background:#fff;
+  }
+  .lock-card button{
+    width:100%; padding:12px; border:none; border-radius:var(--radius);
+    background:var(--ink); color:#fff; font-size:14px; font-weight:600; cursor:pointer;
+  }
+  .lock-error{ color:var(--danger); font-size:12px; margin-top:8px; display:none;}
+
+  #app{ display:none; padding-bottom:80px; }
+
+  header{ padding:24px 18px 14px; }
+  header .eyebrow{
+    font-family:'JetBrains Mono',monospace; font-size:11px; letter-spacing:0.1em;
+    color:var(--ink-soft); text-transform:uppercase; margin-bottom:4px;
+    display:flex; justify-content:space-between; align-items:center;
+  }
+  header h1{ font-family:'Fraunces',serif; font-weight:600; font-size:24px; margin:0; }
+  .logout-link{ font-family:'Inter',sans-serif; font-size:11px; color:var(--ink-soft); text-decoration:underline; cursor:pointer; }
+
+  main{ padding:0 18px; }
+
+  .toolbar{ display:flex; gap:8px; margin-bottom:16px; }
+  .btn{
+    padding:10px 14px; border-radius:var(--radius); border:1px solid var(--ink);
+    background:transparent; color:var(--ink); font-size:13px; font-weight:500; cursor:pointer;
+  }
+  .btn.primary{ background:var(--ink); color:#fff; }
+  .btn.small{ padding:6px 10px; font-size:12px; }
+
+  .search-input{
+    width:100%; padding:10px 12px; border:1px solid var(--paper-line); border-radius:var(--radius);
+    background:var(--card); color:var(--ink); font-size:14px; font-family:'Inter',sans-serif;
+    margin-bottom:14px;
+  }
+  .search-input:focus{ outline:none; border-color:var(--ink-soft); }
+
+  .view{ display:none; }
+  .view.active{ display:block; }
+
+  .card{
+    background:var(--card); border:1px solid var(--paper-line); border-radius:var(--radius);
+    margin-bottom:12px; position:relative; box-shadow:0 2px 6px rgba(35,42,59,0.05); overflow:hidden;
+  }
+  .card.guide-main{ background:#E7EFE4; }
+  .card.guide-sub{ background:#F5F8F3; }
+  .card.urgency-upcoming{ border-color:var(--ink-soft); }
+  .card.urgency-soon{ border:1.5px solid #C08A3E; box-shadow:0 2px 10px rgba(138,106,61,0.18); }
+  .card.urgency-critical{ border:2px solid var(--danger); box-shadow:0 0 0 3px rgba(167,59,50,0.14), 0 2px 10px rgba(167,59,50,0.15); }
+  .card .tab{ position:absolute; top:0; left:18px; width:40px; height:7px; border-radius:0 0 4px 4px; }
+  .urgency-badge{
+    position:absolute; top:10px; right:12px; font-family:'JetBrains Mono',monospace;
+    font-size:10px; font-weight:600; letter-spacing:0.02em; padding:3px 8px; border-radius:10px;
+  }
+  .urgency-badge.upcoming{ background:var(--paper-line); color:var(--ink-soft); }
+  .urgency-badge.soon{ background:#C08A3E; color:#fff; }
+  .urgency-badge.critical{ background:var(--danger); color:#fff; }
+  .card-inner{ padding:20px 16px 8px; }
+  .field-row{
+    display:grid; grid-template-columns: 84px 1fr; gap:8px; padding:8px 0;
+    border-bottom:1px dashed var(--paper-line); font-size:14px;
+  }
+  .field-row:last-of-type{ border-bottom:none; }
+  .field-label{
+    font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--ink-soft);
+    text-transform:uppercase; letter-spacing:0.04em; padding-top:2px;
+  }
+  .field-val{ color:var(--ink); word-break:break-word; white-space:pre-wrap; }
+  .field-val.mono{ font-family:'JetBrains Mono',monospace; font-size:13px; }
+  .card-actions{ display:flex; justify-content:flex-end; gap:14px; padding:8px 14px 12px; }
+  .icon-btn{ background:none; border:none; color:var(--ink-soft); font-size:12px; cursor:pointer; padding:2px 4px; }
+  .icon-btn.delete:hover{ color:var(--danger); }
+  .icon-btn.edit:hover{ color:var(--tab); }
+
+  .empty{ text-align:center; padding:50px 20px; color:var(--ink-soft); font-size:14px; }
+
+  .archive-toggle{ margin-top:18px; }
+  #archiveList{ margin-top:10px; }
+  .note{ font-size:11.5px; color:var(--ink-soft); margin-top:20px; line-height:1.6; }
+
+  .tabbar{
+    position:fixed; bottom:0; left:0; right:0; background:var(--card);
+    border-top:1px solid var(--paper-line); display:flex; z-index:40;
+  }
+  .tabbar button{
+    flex:1; padding:14px 0 10px; background:none; border:none; font-size:12px;
+    color:var(--ink-soft); font-family:'Inter',sans-serif; cursor:pointer;
+  }
+  .tabbar button.active{ color:var(--ink); font-weight:600; border-top:2px solid var(--tab); margin-top:-1px; }
+
+  .modal-backdrop{
+    position:fixed; inset:0; background:rgba(35,42,59,0.4); display:none;
+    align-items:flex-end; justify-content:center; z-index:60;
+  }
+  .modal-backdrop.show{ display:flex; }
+  .modal{
+    background:#fff; border-radius:16px 16px 0 0; padding:22px 20px 28px; width:100%;
+    max-width:480px; max-height:88vh; overflow-y:auto;
+  }
+  .modal h3{ font-family:'Fraunces',serif; margin:0 0 16px; font-size:18px; }
+  .modal label{ display:block; font-size:11.5px; color:var(--ink-soft); margin-bottom:4px; font-family:'JetBrains Mono',monospace; }
+  .modal input, .modal select, .modal textarea{
+    width:100%; padding:10px; border:1px solid var(--paper-line); border-radius:var(--radius);
+    margin-bottom:14px; font-size:14px; font-family:'Inter',sans-serif;
+  }
+  .modal textarea.autosize{
+    resize:none; overflow:hidden; line-height:1.5;
+  }
+  .modal .req::after{ content:" *"; color:var(--danger); }
+  .modal-actions{ display:flex; gap:8px; margin-top:6px; }
+  .modal-actions .btn{ flex:1; text-align:center; }
+</style>
+</head>
+<body>
+
+<div id="lockScreen">
+  <div class="lock-card">
+    <div class="tab-mark">◆</div>
+    <h1>연결자 관리</h1>
+    <p>이름과 비밀번호를 입력해주세요</p>
+    <label>이름 (영어)</label>
+    <input type="text" id="nameInput" placeholder="이름" autocomplete="off">
+    <label>비밀번호</label>
+    <input type="password" id="pwInput" placeholder="전체 비밀번호" autocomplete="off">
+    <button onclick="login()">입장</button>
+    <div class="lock-error" id="pwError">이름과 비밀번호를 확인해주세요</div>
+  </div>
+</div>
+
+<div id="app">
+  <header>
+    <div class="eyebrow">
+      <span>연결자 실시간 공유</span>
+      <span class="logout-link" onclick="logout()">로그아웃</span>
+    </div>
+    <h1 id="greeting"></h1>
+  </header>
+
+  <main>
+    <div id="contactsView" class="view active">
+      <div class="toolbar">
+        <button class="btn primary" onclick="openContactModal()">+ 연결자 등록</button>
+      </div>
+      <input type="text" id="contactSearch" class="search-input" placeholder="검색 (이름, 전화번호, 소속, 특징 등)" oninput="renderContacts()">
+      <div id="contactList"></div>
+      <div class="empty" id="contactEmpty" style="display:none;">아직 등록된 연결자가 없습니다.</div>
+      <div class="note">연결자 정보는 언제든 수정할 수 있습니다. 메인 인도자는 등록한 사람 이름으로 자동 입력됩니다.</div>
+    </div>
+
+    <div id="appointmentsView" class="view">
+      <div class="toolbar">
+        <button class="btn primary" onclick="openApptModal()">+ 약속 등록</button>
+      </div>
+      <input type="text" id="apptSearch" class="search-input" placeholder="검색 (이름, 전화번호, 소속, 약속 날짜 등)" oninput="renderAppointments()">
+      <div id="apptList"></div>
+      <div class="empty" id="apptEmpty" style="display:none;">아직 등록된 약속이 없습니다.</div>
+
+      <button class="btn small archive-toggle" id="archiveToggle" onclick="toggleArchive()" style="display:none;"></button>
+      <div id="archiveList" style="display:none;"></div>
+
+      <div class="note">약속 날짜/시간 기준 오름차순으로 정렬됩니다. 시간이 지난 약속은 자동으로 보관함으로 옮겨집니다.</div>
+    </div>
+  </main>
+
+  <nav class="tabbar">
+    <button id="tabContacts" class="active" onclick="switchView('contacts')">연결자</button>
+    <button id="tabAppt" onclick="switchView('appointments')">약속</button>
+  </nav>
+</div>
+
+<div class="modal-backdrop" id="contactModal">
+  <div class="modal">
+    <h3 id="contactModalTitle">연결자 등록</h3>
+    <input type="hidden" id="contactId">
+    <label class="req">이름</label>
+    <input type="text" id="cName">
+    <label>전화번호</label>
+    <input type="tel" id="cPhone">
+    <label>소속</label>
+    <input type="text" id="cOrg">
+    <label>공부주제</label>
+    <input type="text" id="cTopic">
+    <label>메인 인도자</label>
+    <input type="text" id="cMainGuide">
+    <label>서브 인도자</label>
+    <input type="text" id="cSubGuide">
+    <label>연결 날짜</label>
+    <input type="date" id="cConnectDate">
+    <label>연결 시간</label>
+    <input type="time" id="cConnectTime">
+    <label>특징</label>
+    <textarea id="cTrait" class="autosize" rows="2"></textarea>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeContactModal()">취소</button>
+      <button class="btn primary" onclick="saveContact()">저장</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="apptModal">
+  <div class="modal">
+    <h3 id="apptModalTitle">약속 등록</h3>
+    <input type="hidden" id="apptId">
+    <label class="req">연결자</label>
+    <select id="aContactId"></select>
+    <label>약속 날짜</label>
+    <input type="date" id="aDate">
+    <label>약속 시간</label>
+    <input type="time" id="aTime">
+    <label>메모</label>
+    <textarea id="aMemo" class="autosize" rows="2"></textarea>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeApptModal()">취소</button>
+      <button class="btn primary" onclick="saveAppt()">저장</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const CORRECT_HASH = "03b0bd366e8184f8d871c3a7c7cc26c73c25b54ff54c64b28b10b898242cdc8a";
+async function sha256(text){
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+  return [...new Uint8Array(buf)].map(b=>b.toString(16).padStart(2,'0')).join('');
+}
+
+let currentUser = null;
+
+async function login(){
+  const name = document.getElementById('nameInput').value.trim();
+  const pw = document.getElementById('pwInput').value;
+  const hash = await sha256(pw);
+  if(!name || hash !== CORRECT_HASH){
+    document.getElementById('pwError').style.display = 'block';
+    return;
+  }
+  currentUser = name;
+  document.getElementById('lockScreen').style.display = 'none';
+  document.getElementById('app').style.display = 'block';
+  document.getElementById('greeting').textContent = `복 많이 받으세요, ${currentUser}님`;
+  initApp();
+}
+
+function logout(){
+  currentUser = null;
+  document.getElementById('app').style.display = 'none';
+  document.getElementById('lockScreen').style.display = 'flex';
+  document.getElementById('nameInput').value = '';
+  document.getElementById('pwInput').value = '';
+}
+
+document.getElementById('pwInput').addEventListener('keydown', e=>{ if(e.key==='Enter') login(); });
+
+function autosize(el){
+  el.style.height = 'auto';
+  el.style.height = el.scrollHeight + 'px';
+}
+document.querySelectorAll('textarea.autosize').forEach(el=>{
+  el.addEventListener('input', ()=>autosize(el));
+});
+
+const firebaseConfig = {
+  apiKey: "AIzaSyAORfe5ZENEL-zjX7ZHtFofYapAQZjKydw",
+  authDomain: "paw-hello-sy.firebaseapp.com",
+  databaseURL: "https://paw-hello-sy-default-rtdb.europe-west1.firebasedatabase.app",
+  projectId: "paw-hello-sy",
+};
+
+let db, contacts = {}, appointments = {};
+let appInitialized = false;
+
+function initApp(){
+  if(!firebase.apps.length){
+    firebase.initializeApp(firebaseConfig);
+    db = firebase.database();
+  }
+  if(appInitialized) return;
+  appInitialized = true;
+
+  db.ref('contacts').on('value', snap=>{ contacts = snap.val() || {}; renderContacts(); renderAppointments(); });
+  db.ref('appointments').on('value', snap=>{ appointments = snap.val() || {}; renderAppointments(); });
+
+  // 데이터 변경이 없어도 시간은 계속 흐르므로, 지난 약속이 보관함으로 넘어가도록 주기적으로 다시 그려준다
+  setInterval(renderAppointments, 30000);
+}
+
+function switchView(v){
+  document.getElementById('contactsView').classList.toggle('active', v==='contacts');
+  document.getElementById('appointmentsView').classList.toggle('active', v==='appointments');
+  document.getElementById('tabContacts').classList.toggle('active', v==='contacts');
+  document.getElementById('tabAppt').classList.toggle('active', v==='appointments');
+}
+
+function escapeHtml(str){
+  return String(str ?? '').replace(/[&<>"']/g, s=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[s]));
+}
+
+function todayDateValue(){
+  const d = new Date();
+  d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+  return d.toISOString().slice(0,10);
+}
+function nowTimeValue(){
+  const d = new Date();
+  d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+  return d.toISOString().slice(11,16);
+}
+
+const tabColors = ['var(--tab)','var(--tab-2)','var(--tab-3)','var(--tab-4)'];
+
+function matchesSearch(fields, term){
+  if(!term) return true;
+  return fields.filter(Boolean).join(' ').toLowerCase().includes(term.toLowerCase());
+}
+
+function isMainGuide(c){ return (c.mainGuide||'').trim().toLowerCase() === (currentUser||'').trim().toLowerCase(); }
+function isSubGuide(c){ return (c.subGuide||'').trim().toLowerCase() === (currentUser||'').trim().toLowerCase(); }
+
+function renderContacts(){
+  const term = document.getElementById('contactSearch').value.trim();
+  const allIds = Object.keys(contacts).filter(id => isMainGuide(contacts[id]) || isSubGuide(contacts[id]));
+  const ids = allIds.filter(id=>{
+    const c = contacts[id];
+    return matchesSearch([c.name, c.phone, c.org, c.topic, c.mainGuide, c.subGuide, c.connectAt ? c.connectAt.replace('T',' ') : '', c.trait], term);
+  });
+  const list = document.getElementById('contactList');
+  const emptyEl = document.getElementById('contactEmpty');
+  emptyEl.style.display = ids.length ? 'none' : 'block';
+  emptyEl.textContent = allIds.length ? '검색 결과가 없습니다.' : '아직 내가 인도자로 등록된 연결자가 없습니다.';
+  list.innerHTML = ids.map((id,i)=>{
+    const c = contacts[id];
+    const guideClass = isMainGuide(c) ? ' guide-main' : (isSubGuide(c) ? ' guide-sub' : '');
+    const row = (label,val,mono)=> val ? `<div class="field-row"><div class="field-label">${label}</div><div class="field-val ${mono?'mono':''}">${escapeHtml(val)}</div></div>` : '';
+    return `
+      <div class="card${guideClass}">
+        <div class="tab" style="background:${tabColors[i%tabColors.length]}"></div>
+        <div class="card-inner">
+          ${row('이름', c.name)}
+          ${row('전화번호', c.phone, true)}
+          ${row('소속', c.org)}
+          ${row('공부주제', c.topic)}
+          ${row('메인 인도자', c.mainGuide)}
+          ${row('서브 인도자', c.subGuide)}
+          ${row('연결 날짜', c.connectAt ? c.connectAt.replace('T',' ') : '', true)}
+          ${row('특징', c.trait)}
+        </div>
+        <div class="card-actions">
+          <button class="icon-btn edit" onclick="openContactModal('${id}')">수정</button>
+          <button class="icon-btn delete" onclick="deleteContact('${id}')">삭제</button>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function openContactModal(id){
+  document.getElementById('contactId').value = id || '';
+  if(id){
+    const c = contacts[id];
+    document.getElementById('contactModalTitle').textContent = '연결자 수정';
+    document.getElementById('cName').value = c.name || '';
+    document.getElementById('cPhone').value = c.phone || '';
+    document.getElementById('cOrg').value = c.org || '';
+    document.getElementById('cTopic').value = c.topic || '';
+    document.getElementById('cMainGuide').value = c.mainGuide || '';
+    document.getElementById('cSubGuide').value = c.subGuide || '';
+    const [connDate, connTime] = (c.connectAt || '').split('T');
+    document.getElementById('cConnectDate').value = connDate || todayDateValue();
+    document.getElementById('cConnectTime').value = connTime || nowTimeValue();
+    document.getElementById('cTrait').value = c.trait || '';
+  } else {
+    document.getElementById('contactModalTitle').textContent = '연결자 등록';
+    document.getElementById('cName').value = '';
+    document.getElementById('cPhone').value = '';
+    document.getElementById('cOrg').value = '';
+    document.getElementById('cTopic').value = '';
+    document.getElementById('cMainGuide').value = currentUser || '';
+    document.getElementById('cSubGuide').value = '';
+    document.getElementById('cConnectDate').value = todayDateValue();
+    document.getElementById('cConnectTime').value = nowTimeValue();
+    document.getElementById('cTrait').value = '';
+  }
+  document.getElementById('contactModal').classList.add('show');
+  autosize(document.getElementById('cTrait'));
+}
+function closeContactModal(){ document.getElementById('contactModal').classList.remove('show'); }
+
+function saveContact(){
+  const name = document.getElementById('cName').value.trim();
+  if(!name){ alert('이름은 필수입니다'); return; }
+  const id = document.getElementById('contactId').value;
+  const data = {
+    name,
+    phone: document.getElementById('cPhone').value.trim(),
+    org: document.getElementById('cOrg').value.trim(),
+    topic: document.getElementById('cTopic').value.trim(),
+    mainGuide: document.getElementById('cMainGuide').value.trim(),
+    subGuide: document.getElementById('cSubGuide').value.trim(),
+    connectAt: [document.getElementById('cConnectDate').value, document.getElementById('cConnectTime').value].filter(Boolean).join('T'),
+    trait: document.getElementById('cTrait').value.trim(),
+    updatedBy: currentUser,
+    updatedAt: Date.now(),
+  };
+  if(id){
+    db.ref('contacts/'+id).update(data);
+  } else {
+    data.createdBy = currentUser;
+    db.ref('contacts').push().set(data);
+  }
+  closeContactModal();
+}
+
+function deleteContact(id){
+  if(confirm('이 연결자를 삭제하시겠습니까? 관련 약속도 함께 삭제됩니다.')){
+    db.ref('contacts/'+id).remove();
+    Object.keys(appointments).forEach(aid=>{
+      if(appointments[aid].contactId === id) db.ref('appointments/'+aid).remove();
+    });
+  }
+}
+
+let archiveOpen = false;
+function toggleArchive(){
+  archiveOpen = !archiveOpen;
+  document.getElementById('archiveList').style.display = archiveOpen ? 'block' : 'none';
+  renderAppointments();
+}
+
+function renderAppointments(){
+  const term = document.getElementById('apptSearch').value.trim();
+  const nowKey = todayDateValue() + 'T' + nowTimeValue();
+  const allIds = Object.keys(appointments).filter(id => contacts[appointments[id].contactId]);
+  const ids = allIds.filter(id=>{
+    const a = appointments[id];
+    const c = contacts[a.contactId];
+    return matchesSearch([c.name, c.phone, c.org, c.topic, c.mainGuide, c.subGuide, c.connectAt ? c.connectAt.replace('T',' ') : '', c.trait, a.apptDate, a.apptTime, a.memo], term);
+  });
+
+  const upcoming = [];
+  const past = [];
+  ids.forEach(id=>{
+    const a = appointments[id];
+    const key = (a.apptDate || '9999-99-99') + 'T' + (a.apptTime || '00:00');
+    (key >= nowKey ? upcoming : past).push({id, key});
+  });
+  upcoming.sort((x,y)=> x.key.localeCompare(y.key));
+  past.sort((x,y)=> y.key.localeCompare(x.key));
+
+  const renderCard = (id, i, urgency)=>{
+    const a = appointments[id];
+    const c = contacts[a.contactId] || {};
+    const row = (label,val,mono)=> val ? `<div class="field-row"><div class="field-label">${label}</div><div class="field-val ${mono?'mono':''}">${escapeHtml(val)}</div></div>` : '';
+    const urgencyClass = urgency ? ` urgency-${urgency.tier}` : '';
+    const badge = urgency ? `<div class="urgency-badge ${urgency.tier}">${urgency.label}</div>` : '';
+    return `
+      <div class="card${urgencyClass}">
+        <div class="tab" style="background:${tabColors[i%tabColors.length]}"></div>
+        ${badge}
+        <div class="card-inner">
+          ${row('이름', c.name)}
+          ${row('전화번호', c.phone, true)}
+          ${row('소속', c.org)}
+          ${row('공부주제', c.topic)}
+          ${row('메인 인도자', c.mainGuide)}
+          ${row('서브 인도자', c.subGuide)}
+          ${row('연결 날짜', c.connectAt ? c.connectAt.replace('T',' ') : '', true)}
+          ${row('특징', c.trait)}
+          ${row('약속 날짜', a.apptDate, true)}
+          ${row('약속 시간', a.apptTime, true)}
+          ${row('메모', a.memo)}
+        </div>
+        <div class="card-actions">
+          <button class="icon-btn edit" onclick="openApptModal('${id}')">수정</button>
+          <button class="icon-btn delete" onclick="deleteAppt('${id}')">삭제</button>
+        </div>
+      </div>`;
+  };
+
+  const apptEmptyEl = document.getElementById('apptEmpty');
+  apptEmptyEl.style.display = upcoming.length ? 'none' : 'block';
+  apptEmptyEl.textContent = !allIds.length ? '아직 등록된 약속이 없습니다.' : (term ? '검색 결과가 없습니다.' : '예정된 약속이 없습니다.');
+  document.getElementById('apptList').innerHTML = upcoming.map((x,i)=>renderCard(x.id,i,urgencyInfo(appointments[x.id]))).join('');
+
+  const archiveBtn = document.getElementById('archiveToggle');
+  if(past.length){
+    archiveBtn.style.display = 'block';
+    archiveBtn.textContent = (archiveOpen ? '▲ ' : '▼ ') + `지난 약속 보관함 (${past.length})`;
+  } else {
+    archiveBtn.style.display = 'none';
+  }
+  document.getElementById('archiveList').innerHTML = past.map((x,i)=>renderCard(x.id,i)).join('');
+}
+
+function urgencyInfo(a){
+  const target = new Date(`${a.apptDate}T${a.apptTime || '00:00'}`);
+  const diffMs = target - new Date();
+  if(diffMs < 0) return null;
+  const mins = diffMs / 60000;
+  if(mins < 60) return { tier:'critical', label:`${Math.max(1, Math.round(mins))}분 후` };
+  const hours = mins / 60;
+  if(hours < 24) return { tier:'soon', label:`${Math.round(hours)}시간 후` };
+  const days = hours / 24;
+  if(days < 3) return { tier:'upcoming', label:`${Math.round(days)}일 후` };
+  return null;
+}
+
+function populateContactSelect(selectedId){
+  const sel = document.getElementById('aContactId');
+  const ids = Object.keys(contacts);
+  sel.innerHTML = ids.map(id=>`<option value="${id}" ${id===selectedId?'selected':''}>${escapeHtml(contacts[id].name)}</option>`).join('');
+}
+
+function openApptModal(id){
+  populateContactSelect(id ? appointments[id].contactId : null);
+  document.getElementById('apptId').value = id || '';
+  if(id){
+    const a = appointments[id];
+    document.getElementById('apptModalTitle').textContent = '약속 수정';
+    document.getElementById('aDate').value = a.apptDate || todayDateValue();
+    document.getElementById('aTime').value = a.apptTime || nowTimeValue();
+    document.getElementById('aMemo').value = a.memo || '';
+  } else {
+    document.getElementById('apptModalTitle').textContent = '약속 등록';
+    document.getElementById('aDate').value = todayDateValue();
+    document.getElementById('aTime').value = nowTimeValue();
+    document.getElementById('aMemo').value = '';
+  }
+  document.getElementById('apptModal').classList.add('show');
+  autosize(document.getElementById('aMemo'));
+}
+function closeApptModal(){ document.getElementById('apptModal').classList.remove('show'); }
+
+function saveAppt(){
+  const contactId = document.getElementById('aContactId').value;
+  if(!contactId){ alert('연결자를 선택해주세요'); return; }
+  const id = document.getElementById('apptId').value;
+  const data = {
+    contactId,
+    apptDate: document.getElementById('aDate').value,
+    apptTime: document.getElementById('aTime').value,
+    memo: document.getElementById('aMemo').value.trim(),
+    updatedBy: currentUser,
+    updatedAt: Date.now(),
+  };
+  if(id){
+    db.ref('appointments/'+id).update(data);
+  } else {
+    data.createdBy = currentUser;
+    db.ref('appointments').push().set(data);
+  }
+  closeApptModal();
+}
+
+function deleteAppt(id){
+  if(confirm('이 약속을 삭제하시겠습니까?')) db.ref('appointments/'+id).remove();
+}
+</script>
+</body>
+</html>
