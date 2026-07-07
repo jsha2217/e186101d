@@ -134,6 +134,33 @@
   #archiveList{ margin-top:10px; }
   .note{ font-size:11.5px; color:var(--ink-soft); margin-top:20px; line-height:1.6; }
 
+  .calendar{ background:var(--card); border:1px solid var(--paper-line); border-radius:var(--radius); padding:12px 10px; margin-bottom:16px; overflow:hidden; }
+  .cal-header{ display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; }
+  .cal-label{ font-family:'Fraunces',serif; font-size:15px; font-weight:600; }
+  .cal-nav{ flex-shrink:0; background:none; border:1px solid var(--paper-line); border-radius:var(--radius); width:26px; height:26px; font-size:14px; color:var(--ink); cursor:pointer; }
+  .cal-dow{ display:grid; grid-template-columns:repeat(7, minmax(0,1fr)); text-align:center; font-family:'JetBrains Mono',monospace; font-size:9.5px; color:var(--ink-soft); margin-bottom:3px; }
+  .cal-grid{ display:grid; grid-template-columns:repeat(7, minmax(0,1fr)); gap:2px; }
+  .cal-cell{ position:relative; min-width:0; min-height:58px; display:flex; flex-direction:column; align-items:flex-end; padding:3px; border-radius:var(--radius); cursor:pointer; overflow:hidden; }
+  .cal-cell.empty{ cursor:default; }
+  .cal-cell:not(.empty):hover{ background:var(--paper); }
+  .cal-cell:not(.empty):active{ background:var(--paper-line); }
+  .cal-day{ font-size:11px; line-height:1.3; }
+  .cal-cell.today .cal-day{
+    display:inline-flex; align-items:center; justify-content:center;
+    min-width:16px; height:16px; padding:0 3px; border-radius:50%;
+    background:var(--tab); color:#fff; font-weight:700;
+  }
+  .cal-cell.has-appt .cal-day{ font-weight:600; }
+  .cal-chips{ align-self:stretch; display:flex; flex-direction:column; gap:2px; margin-top:auto; width:100%; }
+  .cal-chip{
+    font-family:'Inter',sans-serif; font-size:7.5px; line-height:1.6; padding:0 3px;
+    border-radius:3px; color:#fff; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  .cal-more{ font-family:'JetBrains Mono',monospace; font-size:7px; color:var(--ink-soft); padding-left:1px; }
+  .cal-footer{ display:flex; justify-content:flex-end; align-items:center; margin-top:8px; font-size:11.5px; }
+  .cal-today-btn{ background:none; border:none; color:var(--ink-soft); text-decoration:underline; font-size:11.5px; cursor:pointer; padding:0; }
+  .modal .empty{ padding:24px 10px; }
+
   .tabbar{
     position:fixed; bottom:0; left:0; right:0; background:var(--card);
     border-top:1px solid var(--paper-line); display:flex; z-index:40;
@@ -211,6 +238,20 @@
       <div class="toolbar">
         <button class="btn primary" onclick="openApptModal()">+ 약속 등록</button>
       </div>
+
+      <div class="calendar">
+        <div class="cal-header">
+          <button type="button" class="cal-nav" onclick="calPrevMonth()">‹</button>
+          <div class="cal-label" id="calLabel"></div>
+          <button type="button" class="cal-nav" onclick="calNextMonth()">›</button>
+        </div>
+        <div class="cal-dow"><span>일</span><span>월</span><span>화</span><span>수</span><span>목</span><span>금</span><span>토</span></div>
+        <div class="cal-grid" id="calGrid"></div>
+        <div class="cal-footer">
+          <button type="button" class="cal-today-btn" onclick="calToday()">오늘로 이동</button>
+        </div>
+      </div>
+
       <input type="text" id="apptSearch" class="search-input" placeholder="검색 (이름, 전화번호, 소속, 약속 날짜 등)" oninput="renderAppointments()">
       <div id="apptList"></div>
       <div class="empty" id="apptEmpty" style="display:none;">아직 등록된 약속이 없습니다.</div>
@@ -285,6 +326,16 @@
   </div>
 </div>
 
+<div class="modal-backdrop" id="dayModal">
+  <div class="modal">
+    <h3 id="dayModalTitle">약속</h3>
+    <div id="dayModalList"></div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeDayModal()">닫기</button>
+    </div>
+  </div>
+</div>
+
 <script>
 const CORRECT_HASH = "03b0bd366e8184f8d871c3a7c7cc26c73c25b54ff54c64b28b10b898242cdc8a";
 async function sha256(text){
@@ -293,6 +344,7 @@ async function sha256(text){
 }
 
 let currentUser = null;
+const AUTH_STORAGE_KEY = 'connectorAuthUser';
 
 async function login(){
   const name = document.getElementById('nameInput').value.trim();
@@ -303,6 +355,7 @@ async function login(){
     return;
   }
   currentUser = name;
+  localStorage.setItem(AUTH_STORAGE_KEY, currentUser);
   document.getElementById('lockScreen').style.display = 'none';
   document.getElementById('app').style.display = 'block';
   document.getElementById('greeting').textContent = `복 많이 받으세요, ${currentUser}님`;
@@ -311,11 +364,22 @@ async function login(){
 
 function logout(){
   currentUser = null;
+  localStorage.removeItem(AUTH_STORAGE_KEY);
   document.getElementById('app').style.display = 'none';
   document.getElementById('lockScreen').style.display = 'flex';
   document.getElementById('nameInput').value = '';
   document.getElementById('pwInput').value = '';
 }
+
+(function tryAutoLogin(){
+  const saved = localStorage.getItem(AUTH_STORAGE_KEY);
+  if(!saved) return;
+  currentUser = saved;
+  document.getElementById('lockScreen').style.display = 'none';
+  document.getElementById('app').style.display = 'block';
+  document.getElementById('greeting').textContent = `복 많이 받으세요, ${currentUser}님`;
+  initApp();
+})();
 
 document.getElementById('pwInput').addEventListener('keydown', e=>{ if(e.key==='Enter') login(); });
 
@@ -336,6 +400,7 @@ const firebaseConfig = {
 
 let db, contacts = {}, appointments = {};
 let appInitialized = false;
+let calYear, calMonth;
 
 function initApp(){
   if(!firebase.apps.length){
@@ -376,6 +441,17 @@ function nowTimeValue(){
   return d.toISOString().slice(11,16);
 }
 
+const WEEKDAYS_KO = ['일','월','화','수','목','금','토'];
+function formatDateWithWeekday(value){
+  if(!value) return '';
+  const [datePart, timePart] = value.split('T');
+  if(!datePart) return '';
+  const d = new Date(datePart + 'T00:00:00');
+  if(isNaN(d.getTime())) return timePart ? `${datePart} ${timePart}` : datePart;
+  const weekday = WEEKDAYS_KO[d.getDay()];
+  return timePart ? `${datePart}(${weekday}) ${timePart}` : `${datePart}(${weekday})`;
+}
+
 const tabColors = ['var(--tab)','var(--tab-2)','var(--tab-3)','var(--tab-4)'];
 
 function matchesSearch(fields, term){
@@ -396,7 +472,7 @@ function isSubGuide(c){
 }
 
 function sortByConnectAt(ids){
-  return ids.slice().sort((a,b)=> (contacts[a].connectAt||'').localeCompare(contacts[b].connectAt||''));
+  return ids.slice().sort((a,b)=> (contacts[b].connectAt||'').localeCompare(contacts[a].connectAt||''));
 }
 
 function renderContacts(){
@@ -424,7 +500,7 @@ function renderContacts(){
           ${row('공부주제', c.topic)}
           ${row('메인 인도자', c.mainGuide)}
           ${row('서브 인도자', subGuideDisplay(c))}
-          ${row('연결 날짜', c.connectAt ? c.connectAt.replace('T',' ') : '', true)}
+          ${row('연결 날짜', formatDateWithWeekday(c.connectAt), true)}
           ${row('특징', c.trait)}
         </div>
         <div class="card-actions">
@@ -460,7 +536,7 @@ function renderAllContacts(){
           ${row('공부주제', c.topic)}
           ${row('메인 인도자', c.mainGuide)}
           ${row('서브 인도자', subGuideDisplay(c))}
-          ${row('연결 날짜', c.connectAt ? c.connectAt.replace('T',' ') : '', true)}
+          ${row('연결 날짜', formatDateWithWeekday(c.connectAt), true)}
           ${row('특징', c.trait)}
         </div>
       </div>`;
@@ -556,6 +632,124 @@ function toggleArchive(){
   renderAppointments();
 }
 
+function ensureCalendarState(){
+  if(calYear === undefined){
+    const d = new Date();
+    calYear = d.getFullYear();
+    calMonth = d.getMonth();
+  }
+}
+
+function colorForString(str){
+  const s = String(str || '');
+  let hash = 0;
+  for(let i=0;i<s.length;i++){ hash = s.charCodeAt(i) + ((hash<<5)-hash); hash |= 0; }
+  const hue = Math.abs(hash) % 360;
+  return `hsl(${hue}, 55%, 42%)`;
+}
+
+const CAL_MAX_CHIPS = 2;
+
+function renderCalendar(idsForDots){
+  ensureCalendarState();
+  const y = calYear, m = calMonth;
+  const startDow = new Date(y, m, 1).getDay();
+  const daysInMonth = new Date(y, m+1, 0).getDate();
+  const todayStr = todayDateValue();
+
+  const contactsByDate = {};
+  idsForDots.forEach(id=>{
+    const a = appointments[id];
+    if(!a || !a.apptDate) return;
+    const c = contacts[a.contactId];
+    if(!c) return;
+    if(!contactsByDate[a.apptDate]) contactsByDate[a.apptDate] = new Map();
+    if(!contactsByDate[a.apptDate].has(a.contactId)) contactsByDate[a.apptDate].set(a.contactId, c.name);
+  });
+
+  let cells = '';
+  for(let i=0;i<startDow;i++) cells += `<div class="cal-cell empty"></div>`;
+  for(let d=1; d<=daysInMonth; d++){
+    const dateStr = `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    const dayContacts = contactsByDate[dateStr] ? Array.from(contactsByDate[dateStr].values()) : [];
+    const classes = ['cal-cell'];
+    if(dateStr === todayStr) classes.push('today');
+    if(dayContacts.length) classes.push('has-appt');
+    const shown = dayContacts.slice(0, CAL_MAX_CHIPS);
+    const extra = dayContacts.length - shown.length;
+    const chips = shown.map(name => `<span class="cal-chip" style="background:${colorForString(name)}">${escapeHtml(name)}</span>`).join('')
+      + (extra > 0 ? `<span class="cal-more">+${extra}</span>` : '');
+    cells += `<div class="${classes.join(' ')}" onclick="openDayModal('${dateStr}')">
+      <span class="cal-day">${d}</span>
+      <span class="cal-chips">${chips}</span>
+    </div>`;
+  }
+
+  document.getElementById('calGrid').innerHTML = cells;
+  document.getElementById('calLabel').textContent = `${y}년 ${m+1}월`;
+}
+
+function calPrevMonth(){
+  ensureCalendarState();
+  calMonth--;
+  if(calMonth < 0){ calMonth = 11; calYear--; }
+  renderAppointments();
+}
+function calNextMonth(){
+  ensureCalendarState();
+  calMonth++;
+  if(calMonth > 11){ calMonth = 0; calYear++; }
+  renderAppointments();
+}
+function calToday(){
+  const d = new Date();
+  calYear = d.getFullYear();
+  calMonth = d.getMonth();
+  renderAppointments();
+}
+
+function openDayModal(dateStr){
+  const dayIds = Object.keys(appointments)
+    .filter(id => contacts[appointments[id].contactId] && appointments[id].apptDate === dateStr)
+    .sort((a,b)=> (appointments[a].apptTime||'').localeCompare(appointments[b].apptTime||''));
+  document.getElementById('dayModalTitle').textContent = formatDateWithWeekday(dateStr) + ' 약속';
+  document.getElementById('dayModalList').innerHTML = dayIds.length
+    ? dayIds.map((id,i)=>renderCard(id,i,urgencyInfo(appointments[id]))).join('')
+    : `<div class="empty">이 날짜에 등록된 약속이 없습니다.</div>`;
+  document.getElementById('dayModal').classList.add('show');
+}
+function closeDayModal(){ document.getElementById('dayModal').classList.remove('show'); }
+
+function renderCard(id, i, urgency){
+  const a = appointments[id];
+  const c = contacts[a.contactId] || {};
+  const guideClass = isMainGuide(c) ? ' guide-main' : (isSubGuide(c) ? ' guide-sub' : '');
+  const row = (label,val,mono)=> val ? `<div class="field-row"><div class="field-label">${label}</div><div class="field-val ${mono?'mono':''}">${escapeHtml(val)}</div></div>` : '';
+  const urgencyClass = urgency ? ` urgency-${urgency.tier}` : '';
+  const badge = urgency ? `<div class="urgency-badge ${urgency.tier}">${urgency.label}</div>` : '';
+  return `
+    <div class="card${guideClass}${urgencyClass}">
+      <div class="tab" style="background:${tabColors[i%tabColors.length]}"></div>
+      ${badge}
+      <div class="card-inner">
+        ${row('이름', c.name)}
+        ${row('전화번호', c.phone, true)}
+        ${row('소속', c.org)}
+        ${row('공부주제', c.topic)}
+        ${row('메인 인도자', c.mainGuide)}
+        ${row('서브 인도자', subGuideDisplay(c))}
+        ${row('연결 날짜', formatDateWithWeekday(c.connectAt), true)}
+        ${row('특징', c.trait)}
+        ${row('약속 날짜', formatDateWithWeekday([a.apptDate, a.apptTime].filter(Boolean).join('T')), true)}
+        ${row('메모', a.memo)}
+      </div>
+      <div class="card-actions">
+        <button class="icon-btn edit" onclick="openApptModal('${id}')">수정</button>
+        <button class="icon-btn delete" onclick="deleteAppt('${id}')">삭제</button>
+      </div>
+    </div>`;
+}
+
 function renderAppointments(){
   const term = document.getElementById('apptSearch').value.trim();
   const nowKey = todayDateValue() + 'T' + nowTimeValue();
@@ -566,6 +760,8 @@ function renderAppointments(){
     return matchesSearch([c.name, c.phone, c.org, c.topic, c.mainGuide, subGuideDisplay(c), c.connectAt ? c.connectAt.replace('T',' ') : '', c.trait, a.apptDate, a.apptTime, a.memo], term);
   });
 
+  renderCalendar(ids);
+
   const upcoming = [];
   const past = [];
   ids.forEach(id=>{
@@ -575,36 +771,6 @@ function renderAppointments(){
   });
   upcoming.sort((x,y)=> x.key.localeCompare(y.key));
   past.sort((x,y)=> y.key.localeCompare(x.key));
-
-  const renderCard = (id, i, urgency)=>{
-    const a = appointments[id];
-    const c = contacts[a.contactId] || {};
-    const row = (label,val,mono)=> val ? `<div class="field-row"><div class="field-label">${label}</div><div class="field-val ${mono?'mono':''}">${escapeHtml(val)}</div></div>` : '';
-    const urgencyClass = urgency ? ` urgency-${urgency.tier}` : '';
-    const badge = urgency ? `<div class="urgency-badge ${urgency.tier}">${urgency.label}</div>` : '';
-    return `
-      <div class="card${urgencyClass}">
-        <div class="tab" style="background:${tabColors[i%tabColors.length]}"></div>
-        ${badge}
-        <div class="card-inner">
-          ${row('이름', c.name)}
-          ${row('전화번호', c.phone, true)}
-          ${row('소속', c.org)}
-          ${row('공부주제', c.topic)}
-          ${row('메인 인도자', c.mainGuide)}
-          ${row('서브 인도자', subGuideDisplay(c))}
-          ${row('연결 날짜', c.connectAt ? c.connectAt.replace('T',' ') : '', true)}
-          ${row('특징', c.trait)}
-          ${row('약속 날짜', a.apptDate, true)}
-          ${row('약속 시간', a.apptTime, true)}
-          ${row('메모', a.memo)}
-        </div>
-        <div class="card-actions">
-          <button class="icon-btn edit" onclick="openApptModal('${id}')">수정</button>
-          <button class="icon-btn delete" onclick="deleteAppt('${id}')">삭제</button>
-        </div>
-      </div>`;
-  };
 
   const apptEmptyEl = document.getElementById('apptEmpty');
   apptEmptyEl.style.display = upcoming.length ? 'none' : 'block';
@@ -618,6 +784,7 @@ function renderAppointments(){
   } else {
     archiveBtn.style.display = 'none';
   }
+  document.getElementById('archiveList').style.display = archiveOpen ? 'block' : 'none';
   document.getElementById('archiveList').innerHTML = past.map((x,i)=>renderCard(x.id,i)).join('');
 }
 
