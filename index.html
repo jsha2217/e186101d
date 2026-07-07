@@ -371,16 +371,6 @@ function logout(){
   document.getElementById('pwInput').value = '';
 }
 
-(function tryAutoLogin(){
-  const saved = localStorage.getItem(AUTH_STORAGE_KEY);
-  if(!saved) return;
-  currentUser = saved;
-  document.getElementById('lockScreen').style.display = 'none';
-  document.getElementById('app').style.display = 'block';
-  document.getElementById('greeting').textContent = `복 많이 받으세요, ${currentUser}님`;
-  initApp();
-})();
-
 document.getElementById('pwInput').addEventListener('keydown', e=>{ if(e.key==='Enter') login(); });
 
 function autosize(el){
@@ -416,6 +406,16 @@ function initApp(){
   // 데이터 변경이 없어도 시간은 계속 흐르므로, 지난 약속이 보관함으로 넘어가도록 주기적으로 다시 그려준다
   setInterval(renderAppointments, 30000);
 }
+
+(function tryAutoLogin(){
+  const saved = localStorage.getItem(AUTH_STORAGE_KEY);
+  if(!saved) return;
+  currentUser = saved;
+  document.getElementById('lockScreen').style.display = 'none';
+  document.getElementById('app').style.display = 'block';
+  document.getElementById('greeting').textContent = `복 많이 받으세요, ${currentUser}님`;
+  initApp();
+})();
 
 function switchView(v){
   document.getElementById('contactsView').classList.toggle('active', v==='contacts');
