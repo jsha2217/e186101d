@@ -28,7 +28,11 @@
   *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
   html,body{ margin:0; padding:0; }
   body{
-    background:var(--paper);
+    background-color:var(--paper);
+    background-image:linear-gradient(rgba(236,233,225,0.35),rgba(236,233,225,0.35)), url('assets/home-bg.jpg');
+    background-size:cover, cover;
+    background-position:center, center top;
+    background-repeat:no-repeat, no-repeat;
     color:var(--ink);
     font-family:'Inter', sans-serif;
     min-height:100vh;
@@ -36,7 +40,12 @@
   }
 
   #lockScreen{
-    position:fixed; inset:0; background:var(--paper);
+    position:fixed; inset:0;
+    background-color:var(--paper);
+    background-image:linear-gradient(rgba(236,233,225,0.35),rgba(236,233,225,0.35)), url('assets/home-bg.jpg');
+    background-size:cover, cover;
+    background-position:center, center top;
+    background-repeat:no-repeat, no-repeat;
     display:flex; align-items:center; justify-content:center;
     z-index:100; padding:24px;
   }
