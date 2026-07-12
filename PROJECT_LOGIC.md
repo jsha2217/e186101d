@@ -2,22 +2,16 @@
 
 빌드 시스템 없는 순수 정적 HTML/JS 앱. 백엔드는 Firebase Realtime Database.
 파일 구성:
-- `index.html` — 실제 서비스 (Firebase 연동, 공유 비밀번호 잠금)
-- `preview.html` — 로컬 전용 미리보기 (Firebase 없이 메모리 더미 데이터, 새로고침 시 초기화)
+- `index.html` — 실제 서비스 (Firebase 연동, 공유 비밀번호 잠금). 미리보기/데모도 이 파일을 그대로 열어서 확인.
 - `firebase.json`, `.firebaserc`, `database.rules.json` — Firebase Hosting/RTDB 설정
-
-두 HTML 파일은 UI/CSS/렌더링 로직이 **완전히 동일**하며, 데이터 저장 계층만 다름(Firebase RTDB ↔ 인메모리 객체). 즉 로직을 수정할 때는 두 파일에 동일하게 반영해야 함(현재 별도 공용 모듈 없이 각 파일에 복붙된 구조).
-
-`preview.html`은 `.gitignore`에 등록되어 있어 **깃허브 저장소에는 올라가지 않음** — 로컬 개발/데모 전용이고, 실제 배포·깃 반영 대상은 `index.html` 하나뿐.
 
 ## 1. 인증 (잠금 화면)
 
 - 로그인은 "이름"(자유 텍스트, 사용자 식별자 역할) + "전체 공용 비밀번호" 2개 입력.
-- `index.html`: 비밀번호를 SHA-256 해시하여 하드코딩된 `CORRECT_HASH`와 비교. 이름 자체는 검증하지 않고 단순히 `currentUser`로 저장되어 이후 모든 "내 연결자/약속" 필터링의 키로 사용됨 (즉 이름을 다르게 입력하면 다른 사람 행세 가능 — 진짜 인증이 아니라 "우리 팀만 아는 공용 비밀번호 + 자기 이름 자율 신고" 방식).
-- `preview.html`: 비밀번호 체크 없음(아무 값이나 통과), 이름만 필수.
+- 비밀번호를 SHA-256 해시하여 하드코딩된 `CORRECT_HASH`와 비교. 이름 자체는 검증하지 않고 단순히 `currentUser`로 저장되어 이후 모든 "내 연결자/약속" 필터링의 키로 사용됨 (즉 이름을 다르게 입력하면 다른 사람 행세 가능 — 진짜 인증이 아니라 "우리 팀만 아는 공용 비밀번호 + 자기 이름 자율 신고" 방식).
 - 로그인 성공 시 잠금화면 숨기고 `initApp()` 호출, 인사말(`복 많이 받으세요, {이름}님`) 표시.
 - 로그아웃은 `currentUser`를 지우고 잠금화면으로 복귀만 함(Firebase 리스너는 끊지 않음 — `appInitialized` 플래그로 최초 1회만 리스너 등록).
-- **`index.html`만**: 로그인 성공 시 이름을 `localStorage`(`connectorAuthUser`)에 저장해두고, 페이지 로드 시 즉시 IIFE(`tryAutoLogin`)로 저장값을 확인해 있으면 잠금화면을 건너뛰고 바로 `initApp()`을 호출 — 매번 재로그인할 필요 없이 자동 로그인됨. 로그아웃 시에만 `localStorage` 값을 지움. (`preview.html`은 새로고침 시 초기화가 의도된 데모 동작이라 적용 안 함)
+- 로그인 성공 시 이름을 `localStorage`(`connectorAuthUser`)에 저장해두고, 페이지 로드 시 즉시 IIFE(`tryAutoLogin`)로 저장값을 확인해 있으면 잠금화면을 건너뛰고 바로 `initApp()`을 호출 — 매번 재로그인할 필요 없이 자동 로그인됨. 로그아웃 시에만 `localStorage` 값을 지움.
 
 ## 2. 데이터 모델 (Firebase RTDB 경로)
 
@@ -100,33 +94,24 @@
 - `subGuideArray`: 배열/콤마문자열 두 형태 모두 지원(과거 데이터 호환).
 - `colorForString`: 문자열(연결자 이름)을 해시해 `hsl(...)` 색상으로 변환 — 캘린더 칩 색상 배정에 사용, 같은 이름은 항상 같은 색.
 
-## 7. `index.html` vs `preview.html` 차이 요약
-
-| 항목 | index.html | preview.html |
-|---|---|---|
-| 데이터 저장 | Firebase RTDB (실시간) | 인메모리 객체(새로고침 시 리셋) |
-| 로그인 검증 | SHA-256 비밀번호 해시 대조 | 이름만 있으면 통과 |
-| 초기 데이터 | 없음(빈 상태) | 더미 연결자 3명 + 약속 4건(임박도 3단계 + 과거 1건 샘플 포함) 미리 주입 |
-| 상단 배너 | 없음 | "Firebase 없이 로컬 더미 데이터로 동작" 안내 배너 |
-| CRUD 구현 | `db.ref(...).set/update/remove` | `contacts`/`appointments` 객체 직접 조작 + 수동 재렌더 호출 |
-
-## 8. Firebase 설정
+## 7. Firebase 설정
 
 - 프로젝트 ID: `paw-hello-sy`, RTDB 리전: `europe-west1`.
 - `firebaseConfig`(apiKey 포함)가 `index.html`에 평문 노출되어 있으나, RTDB 규칙 자체가 완전 공개이므로 apiKey 은닉 여부는 실질적 의미 없음(공개 앱 특성상 정상적인 패턴).
 - `firebase.json`은 database rules 경로만 지정 — Hosting 설정은 없음(별도 배포 방식 사용 중일 가능성).
 
-## 9. 세션 변경 이력 (2026-07-07)
+## 8. 세션 변경 이력 (2026-07-07)
 
-이번 대화에서 `index.html`/`preview.html` 양쪽에 순차적으로 반영한 내용:
+이번 대화에서 `index.html`에 순차적으로 반영한 내용:
 
 1. **공유 캘린더 추가**: 약속 탭 상단에 월간 캘린더 신설. 처음엔 날짜 클릭 시 카드 리스트를 그 날짜로 필터링하는 방식으로 만들었으나, 이후 요구사항에 맞게 **리스트는 항상 전체 표시, 날짜 클릭은 별도 팝업(`#dayModal`)으로 상세 조회**하는 방식으로 재설계.
 2. **날짜에 요일 표시**: `formatDateWithWeekday` 추가, 연결 날짜/약속 날짜 전체에 적용.
 3. **캘린더 오버플로우 버그 수정 + 애플 캘린더 스타일 재설계**: `aspect-ratio` 정사각형 셀 → 고정 min-height 셀로 변경, 그리드 컬럼에 `minmax(0,1fr)` 적용(그리드 콘텐츠 밀림 방지). 날짜 숫자를 셀 우측 상단에 배치, 연결자별 색상은 원형 점 → 문자열 해시 기반 색상의 **둥근 사각형 칩**으로 변경(`colorForString`, 셀당 최대 2개 + `+N` 축약).
 4. **연결자 / 전체 연결 현황 정렬 변경**: 연결 날짜 오름차순 → **내림차순**(최신 우선)으로 변경(`sortByConnectAt` 비교 방향 반전).
 5. **약속 카드에도 인도자 색상 구분 적용**: `renderCard`(약속 리스트/보관함/날짜 팝업 공용 함수)에 연결자 탭과 동일한 `guide-main`/`guide-sub` 배경색 클래스 추가.
-6. **자동 로그인 유지 (`index.html`만)**: 로그인 성공 시 이름을 `localStorage`에 저장, 페이지 로드 시 저장값이 있으면 잠금화면을 건너뛰고 바로 앱으로 진입(`tryAutoLogin`). 로그아웃 시에만 저장값 삭제. `preview.html`은 새로고침 시 초기화되는 게 의도된 데모 동작이라 미적용.
+6. **자동 로그인 유지**: 로그인 성공 시 이름을 `localStorage`에 저장, 페이지 로드 시 저장값이 있으면 잠금화면을 건너뛰고 바로 앱으로 진입(`tryAutoLogin`). 로그아웃 시에만 저장값 삭제.
 7. **약속 카드 날짜/시간 표기 통합**: "약속 날짜"와 "약속 시간"으로 나뉘어 있던 두 줄을 연결 날짜와 같은 방식(날짜+요일+시간 한 줄)으로 합침. 등록/수정 모달의 입력 필드는 변경 없음(표시만 통합).
-8. **GitHub 반영**: `index.html`, `PROJECT_LOGIC.md` 변경사항을 커밋 후 `origin/master`에 푸시. `preview.html`은 `.gitignore` 대상이라 원래부터 저장소에 포함되지 않음. 커밋 전 diff를 검토해 Firebase 설정(`apiKey`/`databaseURL`)·데이터 스키마·삭제(`remove`)/쓰기(`set`/`update`) 로직이 전혀 변경되지 않았음을 확인 — 이번 배포로 인해 기존 Firebase RTDB 데이터(`contacts`/`appointments`)가 영향받을 위험은 없음.
+8. **GitHub 반영**: `index.html`, `PROJECT_LOGIC.md` 변경사항을 커밋 후 `origin/master`에 푸시. 커밋 전 diff를 검토해 Firebase 설정(`apiKey`/`databaseURL`)·데이터 스키마·삭제(`remove`)/쓰기(`set`/`update`) 로직이 전혀 변경되지 않았음을 확인 — 이번 배포로 인해 기존 Firebase RTDB 데이터(`contacts`/`appointments`)가 영향받을 위험은 없음.
+9. **`preview.html` 제거**: 로컬 더미 데이터 미리보기용 별도 파일이었으나, `index.html` 하나만 유지하는 것으로 정리(미리보기도 `index.html`을 직접 열어서 확인). `.gitignore`도 함께 삭제(다른 항목 없었음).
 
 구현 중 확인된 이슈: 캘린더 관련 코드를 여러 차례 리팩터링하는 과정에서 `renderAppointments` 내부 로직(예정/지난 약속 분리, 보관함 표시)이 실수로 한 번 삭제됐다가 다시 복원된 이력이 있음 — 현재는 정상 동작 확인됨(문법 검사 통과, 코드 리뷰로 재확인).
