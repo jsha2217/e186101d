@@ -185,6 +185,10 @@
   .cal-more{ font-family:'JetBrains Mono',monospace; font-size:7px; color:var(--ink-soft); padding-left:1px; }
   .cal-footer{ display:flex; justify-content:flex-end; align-items:center; margin-top:8px; font-size:11.5px; }
   .cal-today-btn{ background:none; border:none; color:var(--ink-soft); text-decoration:underline; font-size:11.5px; cursor:pointer; padding:0; }
+  .v-cal-smileys{ align-self:stretch; display:flex; flex-wrap:wrap; gap:2px; margin-top:auto; justify-content:flex-end; }
+  .v-smiley{ width:14px; height:14px; flex-shrink:0; }
+  .v-cal-legend{ display:flex; gap:14px; font-size:11px; color:var(--ink-soft); margin:8px 2px 0; }
+  .v-cal-legend span{ display:inline-flex; align-items:center; gap:4px; }
   .modal .empty{ padding:24px 10px; }
 
   .tabbar{
@@ -323,6 +327,24 @@
       <div class="toolbar">
         <button class="btn primary" onclick="openValidationModal(null)">+ 유효 등록</button>
       </div>
+
+      <div class="calendar">
+        <div class="cal-header">
+          <button type="button" class="cal-nav" onclick="vCalPrevMonth()">‹</button>
+          <div class="cal-label" id="vCalLabel"></div>
+          <button type="button" class="cal-nav" onclick="vCalNextMonth()">›</button>
+        </div>
+        <div class="cal-dow"><span>일</span><span>월</span><span>화</span><span>수</span><span>목</span><span>금</span><span>토</span></div>
+        <div class="cal-grid" id="vCalGrid"></div>
+        <div class="v-cal-legend">
+          <span><span class="validation-dot" style="background:#f1c40f"></span>2차 달성</span>
+          <span><span class="validation-dot" style="background:#2ecc71"></span>3차 이상 진행</span>
+        </div>
+        <div class="cal-footer">
+          <button type="button" class="cal-today-btn" onclick="vCalToday()">오늘로 이동</button>
+        </div>
+      </div>
+
       <input type="text" id="validationSearch" class="search-input" placeholder="검색 (이름, 소속, 공부주제 등)" oninput="renderValidations()">
       <div id="validationList"></div>
       <div class="empty" id="validationEmpty" style="display:none;"></div>
@@ -408,6 +430,16 @@
     <div id="dayModalList"></div>
     <div class="modal-actions">
       <button class="btn" onclick="closeDayModal()">닫기</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="vDayModal">
+  <div class="modal">
+    <h3 id="vDayModalTitle">유효</h3>
+    <div id="vDayModalList"></div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeValidationDayModal()">닫기</button>
     </div>
   </div>
 </div>
@@ -958,6 +990,49 @@ function latestValidationDate(contactId){
   return ids.length ? (validations[ids[ids.length-1]].date || '') : '';
 }
 
+// 2차(=최초 유효)가 달성된 날짜와, 3차 이상까지 진행됐는지 여부. 2차가 아직 없으면 null.
+function validationAnchorInfo(contactId){
+  const roundIds = sortedValidationRounds(contactId);
+  if(!roundIds.length) return null;
+  return { date: validations[roundIds[0]].date || '', advanced: roundIds.length >= 2 };
+}
+
+function renderValidationCard(id, i){
+  const c = contacts[id];
+  const guideClass = isMainGuide(c) ? ' guide-main' : (isSubGuide(c) ? ' guide-sub' : '');
+  const canRegister = isMainGuide(c) || isSubGuide(c);
+  const row = (label,val,mono)=> val ? `<div class="field-row"><div class="field-label">${label}</div><div class="field-val ${mono?'mono':''}">${escapeHtml(val)}</div></div>` : '';
+  const roundIds = sortedValidationRounds(id);
+  const rounds = [{ date: c.connectAt, topic: c.topic }, ...roundIds.map(rid=>({ date: validations[rid].date, topic: validations[rid].topic }))];
+  const historyHtml = rounds.map((r, idx)=>{
+    const color = ROUND_COLORS[Math.min(idx, ROUND_COLORS.length - 1)];
+    return `
+      <div class="validation-item">
+        <div class="validation-round"><span class="validation-dot" style="background:${color}"></span>${idx+1}차</div>
+        <div class="validation-meta">
+          <div class="validation-date">${formatDateWithWeekday(r.date)}</div>
+          <div class="validation-topic">${escapeHtml(r.topic)}</div>
+        </div>
+      </div>`;
+  }).join('');
+  return `
+    <div class="card${guideClass}">
+      <div class="tab" style="background:${tabColors[i%tabColors.length]}"></div>
+      <div class="card-inner">
+        ${row('이름', c.name)}
+        ${row('전화번호', c.phone, true)}
+        ${row('소속', c.org)}
+        ${row('메인 인도자', c.mainGuide)}
+        ${row('서브 인도자', subGuideDisplay(c))}
+        <div class="validation-list">${historyHtml}</div>
+      </div>
+      ${canRegister ? `<div class="card-actions">
+        <button class="icon-btn edit" onclick="openValidationModal('${id}')">수정</button>
+        <button class="icon-btn delete" onclick="deleteAllValidations('${id}')">삭제</button>
+      </div>` : ''}
+    </div>`;
+}
+
 function renderValidations(){
   const term = document.getElementById('validationSearch').value.trim();
   const registeredIds = Object.keys(contacts).filter(id => sortedValidationRounds(id).length > 0);
@@ -968,52 +1043,105 @@ function renderValidations(){
     return matchesSearch([c.name, c.phone, c.org, c.topic, c.mainGuide, subGuideDisplay(c), historyText], term);
   }).sort((a,b)=> latestValidationDate(b).localeCompare(latestValidationDate(a)));
 
+  renderValidationCalendar(ids);
+
   const list = document.getElementById('validationList');
   const emptyEl = document.getElementById('validationEmpty');
   emptyEl.style.display = ids.length ? 'none' : 'block';
   emptyEl.textContent = registeredIds.length ? '검색 결과가 없습니다.' : '아직 유효가 등록된 연결자가 없습니다.';
 
-  list.innerHTML = ids.map((id,i)=>{
-    const c = contacts[id];
-    const guideClass = isMainGuide(c) ? ' guide-main' : (isSubGuide(c) ? ' guide-sub' : '');
-    const canRegister = isMainGuide(c) || isSubGuide(c);
-    const row = (label,val,mono)=> val ? `<div class="field-row"><div class="field-label">${label}</div><div class="field-val ${mono?'mono':''}">${escapeHtml(val)}</div></div>` : '';
-    const roundIds = sortedValidationRounds(id);
-    const rounds = [{ date: c.connectAt, topic: c.topic }, ...roundIds.map(rid=>({ date: validations[rid].date, topic: validations[rid].topic }))];
-    const historyHtml = rounds.map((r, idx)=>{
-      const color = ROUND_COLORS[Math.min(idx, ROUND_COLORS.length - 1)];
-      return `
-        <div class="validation-item">
-          <div class="validation-round"><span class="validation-dot" style="background:${color}"></span>${idx+1}차</div>
-          <div class="validation-meta">
-            <div class="validation-date">${formatDateWithWeekday(r.date)}</div>
-            <div class="validation-topic">${escapeHtml(r.topic)}</div>
-          </div>
-        </div>`;
-    }).join('');
-    return `
-      <div class="card${guideClass}">
-        <div class="tab" style="background:${tabColors[i%tabColors.length]}"></div>
-        <div class="card-inner">
-          ${row('이름', c.name)}
-          ${row('전화번호', c.phone, true)}
-          ${row('소속', c.org)}
-          ${row('메인 인도자', c.mainGuide)}
-          ${row('서브 인도자', subGuideDisplay(c))}
-          <div class="validation-list">${historyHtml}</div>
-        </div>
-        ${canRegister ? `<div class="card-actions">
-          <button class="icon-btn edit" onclick="openValidationModal('${id}')">수정</button>
-          <button class="icon-btn delete" onclick="deleteAllValidations('${id}')">삭제</button>
-        </div>` : ''}
-      </div>`;
-  }).join('');
+  list.innerHTML = ids.map((id,i)=>renderValidationCard(id,i)).join('');
 }
+
+let vCalYear, vCalMonth;
+const CAL_MAX_ICONS = 4;
+
+function ensureValidationCalendarState(){
+  if(vCalYear === undefined){
+    const d = new Date();
+    vCalYear = d.getFullYear();
+    vCalMonth = d.getMonth();
+  }
+}
+
+function smileyIcon(color){
+  return `<svg class="v-smiley" viewBox="0 0 24 24"><circle cx="12" cy="12" r="11" fill="${color}"/><circle cx="8.5" cy="10" r="1.6" fill="#2a2a2a"/><circle cx="15.5" cy="10" r="1.6" fill="#2a2a2a"/><path d="M7.5 14.5 Q12 18.5 16.5 14.5" stroke="#2a2a2a" stroke-width="1.6" fill="none" stroke-linecap="round"/></svg>`;
+}
+
+function renderValidationCalendar(idsForIcons){
+  ensureValidationCalendarState();
+  const y = vCalYear, m = vCalMonth;
+  const startDow = new Date(y, m, 1).getDay();
+  const daysInMonth = new Date(y, m+1, 0).getDate();
+  const todayStr = todayDateValue();
+
+  const colorsByDate = {};
+  idsForIcons.forEach(id=>{
+    const info = validationAnchorInfo(id);
+    if(!info || !info.date) return;
+    if(!colorsByDate[info.date]) colorsByDate[info.date] = [];
+    colorsByDate[info.date].push(info.advanced ? '#2ecc71' : '#f1c40f');
+  });
+
+  let cells = '';
+  for(let i=0;i<startDow;i++) cells += `<div class="cal-cell empty"></div>`;
+  for(let d=1; d<=daysInMonth; d++){
+    const dateStr = `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    const dayColors = colorsByDate[dateStr] || [];
+    const classes = ['cal-cell'];
+    if(dateStr === todayStr) classes.push('today');
+    if(dayColors.length) classes.push('has-appt');
+    const shown = dayColors.slice(0, CAL_MAX_ICONS);
+    const extra = dayColors.length - shown.length;
+    const icons = shown.map(c=>smileyIcon(c)).join('')
+      + (extra > 0 ? `<span class="cal-more">+${extra}</span>` : '');
+    cells += `<div class="${classes.join(' ')}" onclick="openValidationDayModal('${dateStr}')">
+      <span class="cal-day">${d}</span>
+      <span class="v-cal-smileys">${icons}</span>
+    </div>`;
+  }
+
+  document.getElementById('vCalGrid').innerHTML = cells;
+  document.getElementById('vCalLabel').textContent = `${y}년 ${m+1}월`;
+}
+
+function vCalPrevMonth(){
+  ensureValidationCalendarState();
+  vCalMonth--;
+  if(vCalMonth < 0){ vCalMonth = 11; vCalYear--; }
+  renderValidations();
+}
+function vCalNextMonth(){
+  ensureValidationCalendarState();
+  vCalMonth++;
+  if(vCalMonth > 11){ vCalMonth = 0; vCalYear++; }
+  renderValidations();
+}
+function vCalToday(){
+  const d = new Date();
+  vCalYear = d.getFullYear();
+  vCalMonth = d.getMonth();
+  renderValidations();
+}
+
+function openValidationDayModal(dateStr){
+  const ids = Object.keys(contacts).filter(id=>{
+    const info = validationAnchorInfo(id);
+    return info && info.date === dateStr;
+  });
+  document.getElementById('vDayModalTitle').textContent = formatDateWithWeekday(dateStr) + ' 유효 (2차 달성)';
+  document.getElementById('vDayModalList').innerHTML = ids.length
+    ? ids.map((id,i)=>renderValidationCard(id,i)).join('')
+    : `<div class="empty">이 날짜에 2차가 달성된 연결자가 없습니다.</div>`;
+  document.getElementById('vDayModal').classList.add('show');
+}
+function closeValidationDayModal(){ document.getElementById('vDayModal').classList.remove('show'); }
 
 function populateValidationContactSelect(selectedId){
   const sel = document.getElementById('vContactId');
   const ids = Object.keys(contacts).filter(id => isMainGuide(contacts[id]) || isSubGuide(contacts[id]) || id === selectedId);
-  sel.innerHTML = ids.map(id=>`<option value="${id}" ${id===selectedId?'selected':''}>${escapeHtml(contactOptionLabel(contacts[id]))}</option>`).join('');
+  const placeholder = `<option value="" ${selectedId?'':'selected'}>연결자를 선택해주세요</option>`;
+  sel.innerHTML = placeholder + ids.map(id=>`<option value="${id}" ${id===selectedId?'selected':''}>${escapeHtml(contactOptionLabel(contacts[id]))}</option>`).join('');
 }
 
 function addValidationRoundRow(date, topic, id){
@@ -1058,7 +1186,12 @@ function updateValidationRoundHint(){
 
 function loadValidationRoundsForContact(){
   const contactId = document.getElementById('vContactId').value;
-  const roundIds = contactId ? sortedValidationRounds(contactId) : [];
+  if(!contactId){
+    document.getElementById('vRoundList').innerHTML = '';
+    updateValidationRoundHint();
+    return;
+  }
+  const roundIds = sortedValidationRounds(contactId);
   renderValidationRoundRows(roundIds.map(rid=>({ id: rid, date: validations[rid].date||'', topic: validations[rid].topic||'' })));
   updateValidationRoundHint();
 }
