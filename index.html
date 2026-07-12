@@ -889,10 +889,15 @@ function urgencyInfo(a){
   return null;
 }
 
+function contactOptionLabel(c){
+  const guides = [c.mainGuide, ...subGuideArray(c)].filter(Boolean);
+  return guides.length ? `${c.name} - ${guides.join(', ')}` : c.name;
+}
+
 function populateContactSelect(selectedId){
   const sel = document.getElementById('aContactId');
   const ids = Object.keys(contacts).filter(id => isMainGuide(contacts[id]) || isSubGuide(contacts[id]) || id === selectedId);
-  sel.innerHTML = ids.map(id=>`<option value="${id}" ${id===selectedId?'selected':''}>${escapeHtml(contacts[id].name)}</option>`).join('');
+  sel.innerHTML = ids.map(id=>`<option value="${id}" ${id===selectedId?'selected':''}>${escapeHtml(contactOptionLabel(contacts[id]))}</option>`).join('');
 }
 
 function openApptModal(id){
@@ -1008,7 +1013,7 @@ function renderValidations(){
 function populateValidationContactSelect(selectedId){
   const sel = document.getElementById('vContactId');
   const ids = Object.keys(contacts).filter(id => isMainGuide(contacts[id]) || isSubGuide(contacts[id]) || id === selectedId);
-  sel.innerHTML = ids.map(id=>`<option value="${id}" ${id===selectedId?'selected':''}>${escapeHtml(contacts[id].name)}</option>`).join('');
+  sel.innerHTML = ids.map(id=>`<option value="${id}" ${id===selectedId?'selected':''}>${escapeHtml(contactOptionLabel(contacts[id]))}</option>`).join('');
 }
 
 function addValidationRoundRow(date, topic, id){
