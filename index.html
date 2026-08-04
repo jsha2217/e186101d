@@ -116,27 +116,28 @@
   .card.urgency-critical{ border:2px solid var(--danger); box-shadow:0 0 0 3px rgba(167,59,50,0.14), 0 2px 10px rgba(167,59,50,0.15); }
   .card.baptized{
     border:1.5px solid var(--gold);
-    box-shadow:0 0 0 1px rgba(201,165,76,0.25), 0 2px 10px rgba(138,106,61,0.18);
-    animation:baptized-breathe 3s ease-in-out infinite;
+    box-shadow:
+      0 0 0 1px rgba(201,165,76,0.35),
+      0 0 0 4px rgba(201,165,76,0.14),
+      0 0 0 8px rgba(201,165,76,0);
+    animation:baptized-aura 3.6s ease-in-out infinite;
   }
-  .card.baptized::before{
-    content:''; position:absolute; top:-15%; left:-28%; width:26%; height:130%;
-    pointer-events:none;
-    background:linear-gradient(100deg, transparent 0%, rgba(255,246,220,0.9) 50%, transparent 100%);
-    transform:skewX(-18deg) translateX(0%);
-    animation:baptized-shine 4.5s ease-in-out infinite;
-  }
-  @keyframes baptized-breathe{
-    0%,100%{ box-shadow:0 0 0 1px rgba(201,165,76,0.25), 0 2px 10px rgba(138,106,61,0.18); }
-    50%{ box-shadow:0 0 0 3px rgba(201,165,76,0.45), 0 4px 16px rgba(138,106,61,0.32); }
-  }
-  @keyframes baptized-shine{
-    0%, 8%{ transform:skewX(-18deg) translateX(0%); }
-    45%, 100%{ transform:skewX(-18deg) translateX(480%); }
+  @keyframes baptized-aura{
+    0%,100%{
+      box-shadow:
+        0 0 0 1px rgba(201,165,76,0.35),
+        0 0 0 4px rgba(201,165,76,0.14),
+        0 0 0 8px rgba(201,165,76,0);
+    }
+    50%{
+      box-shadow:
+        0 0 2px 2px rgba(201,165,76,0.55),
+        0 0 12px 10px rgba(201,165,76,0.22),
+        0 0 24px 18px rgba(201,165,76,0.10);
+    }
   }
   @media (prefers-reduced-motion: reduce){
     .card.baptized{ animation:none; }
-    .card.baptized::before{ animation:none; display:none; }
   }
   .card .tab{ position:absolute; top:0; left:18px; width:40px; height:7px; border-radius:0 0 4px 4px; }
   .urgency-badge{
@@ -628,6 +629,7 @@ function sortByConnectAt(ids){
 }
 
 function baptizedClass(c){ return c && c.baptism === 1 ? ' baptized' : ''; }
+function baptizedDelayStyle(c, i){ return c && c.baptism === 1 ? ` style="animation-delay:${(i%5)*0.35}s"` : ''; }
 function baptizedBadge(c){
   if(!c || c.baptism !== 1) return '';
   return `<div class="baptized-badge"><svg viewBox="0 0 24 24"><path d="M12.8 7.6c-.2-1.3-1.2-2.4-2.5-2.6.1 1.4 1.1 2.5 2.4 2.7.03-.03.07-.07.1-.1Z"/><path d="M17.8 12.4c0-2.4-1.9-3.9-3.8-3.9-1 0-1.6.4-2 .4s-1-.4-2-.4c-1.9 0-3.9 1.5-3.9 4 0 3 2.1 7.3 4.4 7.3.7 0 1-.3 1.5-.3s.8.3 1.5.3c2.2 0 4.3-4 4.3-7.4Z"/></svg>Fruit</div>`;
@@ -649,7 +651,7 @@ function renderContacts(){
     const guideClass = isMainGuide(c) ? ' guide-main' : (isSubGuide(c) ? ' guide-sub' : '');
     const row = (label,val,mono)=> val ? `<div class="field-row"><div class="field-label">${label}</div><div class="field-val ${mono?'mono':''}">${escapeHtml(val)}</div></div>` : '';
     return `
-      <div class="card${guideClass}${baptizedClass(c)}">
+      <div class="card${guideClass}${baptizedClass(c)}"${baptizedDelayStyle(c,i)}>
         <div class="tab" style="background:${tabColors[i%tabColors.length]}"></div>
         ${baptizedBadge(c)}
         <div class="card-inner">
@@ -686,7 +688,7 @@ function renderAllContacts(){
     const guideClass = isMainGuide(c) ? ' guide-main' : (isSubGuide(c) ? ' guide-sub' : '');
     const row = (label,val,mono)=> val ? `<div class="field-row"><div class="field-label">${label}</div><div class="field-val ${mono?'mono':''}">${escapeHtml(val)}</div></div>` : '';
     return `
-      <div class="card${guideClass}${baptizedClass(c)}">
+      <div class="card${guideClass}${baptizedClass(c)}"${baptizedDelayStyle(c,i)}>
         <div class="tab" style="background:${tabColors[i%tabColors.length]}"></div>
         ${baptizedBadge(c)}
         <div class="card-inner">
@@ -892,7 +894,7 @@ function renderCard(id, i, urgency){
   const urgencyClass = urgency ? ` urgency-${urgency.tier}` : '';
   const badge = urgency ? `<div class="urgency-badge ${urgency.tier}">${urgency.label}</div>` : '';
   return `
-    <div class="card${guideClass}${baptizedClass(c)}${urgencyClass}">
+    <div class="card${guideClass}${baptizedClass(c)}${urgencyClass}"${baptizedDelayStyle(c,i)}>
       <div class="tab" style="background:${tabColors[i%tabColors.length]}"></div>
       ${baptizedBadge(c)}
       ${badge}
@@ -1061,7 +1063,7 @@ function renderValidationCard(id, i){
       </div>`;
   }).join('');
   return `
-    <div class="card${guideClass}${baptizedClass(c)}">
+    <div class="card${guideClass}${baptizedClass(c)}"${baptizedDelayStyle(c,i)}>
       <div class="tab" style="background:${tabColors[i%tabColors.length]}"></div>
       ${baptizedBadge(c)}
       <div class="card-inner">
