@@ -728,6 +728,7 @@ function saveContact(){
     db.ref('contacts/'+id).update(data);
   } else {
     data.createdBy = currentUser;
+    data.baptism = 0;
     db.ref('contacts').push().set(data);
   }
   closeContactModal();

@@ -4,6 +4,9 @@
 파일 구성:
 - `index.html` — 실제 서비스 (Firebase 연동, 공유 비밀번호 잠금). 미리보기/데모도 이 파일을 그대로 열어서 확인.
 - `firebase.json`, `.firebaserc`, `database.rules.json` — Firebase RTDB 설정 (Hosting 설정은 없음, 아래 7번 참고)
+- `vendor/firebase/` — Firebase SDK(`firebase-app-compat.js`, `firebase-database-compat.js`)를 CDN이 아닌 로컬 파일로 벤더링(7번 참고).
+- `assets/home-bg.jpg` — 잠금화면 배경 이미지.
+- `scripts/set-baptism.sh` — `contacts.baptism` 필드를 터미널에서 직접 조작하는 스크립트(2번 데이터 모델 참고). 인자 없이 실행하면 백필, `<contactId> <0|1>`로 실행하면 특정 연결자 값 설정.
 
 ## 1. 인증 (잠금 화면)
 
@@ -22,6 +25,9 @@
   subGuide             // 서브 인도자 배열(string[]) — 구버전 호환용 comma-split 파싱도 지원
   connectAt            // "YYYY-MM-DDTHH:mm" 연결 날짜/시간
   trait                // 특징 (자유 텍스트, 여러 줄)
+  baptism              // 0 또는 1 (침례 여부). 신규 등록 시 항상 0으로 생성.
+                        // 앱 UI에는 이 필드를 위한 입력/표시가 전혀 없음 — 값 변경은
+                        // scripts/set-baptism.sh로 터미널에서 직접 DB를 조작해야만 가능.
   createdBy, updatedBy, updatedAt
 
 /appointments/{apptId}
@@ -91,11 +97,12 @@
 
 ### 4-3. 유효 탭 (`validationsView`)
 - "유효"(주기적 방문/스터디 확인 미팅) 진행 이력을 연결자별로 회차 단위로 기록하는 탭. **모든 사용자에게 공유**(등록자 무관 전체 노출, 등록/수정/삭제 권한만 메인·서브 인도자로 제한).
+- **월간 캘린더**(`renderValidationCalendar`, 약속 탭 캘린더와 별개의 독립 상태 `vCalYear`/`vCalMonth`): 연결자별 **2차(=최초 유효) 달성일**에 스마일 아이콘을 표시(`validationAnchorInfo`가 각 연결자의 가장 이른 2차 이후 회차 날짜와 "3차 이상 진행 여부"를 계산). 아직 3차가 없으면 노랑, 3차 이상 진행됐으면 초록 스마일로 같은 날짜 자리에서 색만 전환. 같은 날짜에 여러 명이면 아이콘이 나란히 표시되고 셀당 최대 `CAL_MAX_ICONS`(4)개, 초과분은 `+N`으로 축약. 날짜 클릭 시 `openValidationDayModal`로 해당 날짜에 2차를 달성한 연결자들의 카드를 `#vDayModal` 팝업에 표시(`renderValidationCard`로 카드 렌더링 공용화 — 리스트/팝업 공유).
 - **1차는 항상 연결자 등록 정보(`connectAt`/`topic`)를 그대로 사용**하고 `validations` 노드에는 저장하지 않음. `validations`에는 **2차부터**의 회차만 저장됨.
 - 유효가 1건이라도 있는(즉 `validations`에 최소 1개 회차가 있는) 연결자만 목록에 노출(`registeredIds`). 정렬은 **가장 최근 회차 날짜 내림차순**(`latestValidationDate`).
 - 카드에는 연결자 기본 정보(이름/전화/소속/메인·서브 인도자) + 회차별 히스토리(`validation-item`, 1차부터 N차까지 전부, 회차 번호는 `ROUND_COLORS`(빨강/노랑/초록, 3차 이후는 초록 고정) 색 점과 함께 표시).
 - **등록/수정 모달**(`#validationModal`):
-  - 연결자 select(`vContactId`, 신규 등록 시 특정 연결자를 프리셋 가능) — 표시 형식은 5번 참고. select 변경 시 `loadValidationRoundsForContact`가 해당 연결자의 기존 2차 이후 회차를 다시 불러옴.
+  - 연결자 select(`vContactId`, 신규 등록 시 특정 연결자를 프리셋 가능) — 표시 형식은 5번 참고. 프리셋 없이 신규 등록할 때는 빈 placeholder("연결자를 선택해주세요")가 기본 선택되어 있어 **연결자를 직접 골라야만** 회차 입력란이 나타남(자동으로 첫 연결자가 선택되어 실수로 엉뚱한 연결자에 등록되는 것을 방지). select 변경 시 `loadValidationRoundsForContact`가 해당 연결자의 기존 2차 이후 회차를 다시 불러옴(선택 해제 시 회차 입력란도 비움).
   - 회차 입력 행(`#vRoundList`, `addValidationRoundRow`/`renumberValidationRounds`)은 **항상 "2차"부터 라벨링**됨(`idx+2`) — 1차는 폼에 아예 나타나지 않고 수정 불가(1차를 바꾸려면 연결자 정보 자체를 수정해야 함). 신규 등록 시에도 기본으로 빈 행 1개가 "2차"로 표시됨.
   - `+ 회차 추가` 버튼으로 행을 계속 늘릴 수 있고, 각 행 우측 ✕ 버튼으로 삭제 가능(삭제 시 회차 번호 자동 재계산).
   - 저장(`saveValidation`) 시: 폼에 남아있는 행 중 기존 `id`가 있으면 `update`, 없으면 신규 `push().set()`. 폼에서 삭제된(더 이상 존재하지 않는) 기존 회차는 `db.ref('validations/'+id).remove()`로 정리 — 즉 폼 상태가 곧 그 연결자의 전체 2차 이후 회차 목록의 진실源.
@@ -125,6 +132,7 @@
 
 - 프로젝트 ID: `paw-hello-sy`, RTDB 리전: `europe-west1`.
 - `firebaseConfig`(apiKey 포함)가 `index.html`에 평문 노출되어 있으나, RTDB 규칙 자체가 완전 공개이므로 apiKey 은닉 여부는 실질적 의미 없음(공개 앱 특성상 정상적인 패턴).
+- Firebase SDK는 CDN(`gstatic.com`)이 아닌 `vendor/firebase/`에 로컬로 벤더링되어 있음 — 일부 Safari 콘텐츠 차단 확장(AdGuard, 1Blocker 등)이 `gstatic.com`/`googleapis.com` 요청을 도메인 단위로 차단해 SDK 로드 자체가 실패하고 데이터가 아예 렌더링되지 않는 문제가 있었음. 같은 origin에서 서빙하면 이 차단을 피할 수 있음.
 - `firebase.json`은 database rules 경로만 지정 — Hosting 설정은 없음. **실제 배포는 GitHub Pages**(`jsha2217/e186101d` 저장소, `master` 브랜치, 루트 경로) — https://jsha2217.github.io/e186101d/ 로 서비스되며, `master`에 push하면 별도 빌드/승인 절차 없이 자동 반영(보통 1~2분 내).
 
 ## 8. 세션 변경 이력
@@ -144,11 +152,27 @@
 
 구현 중 확인된 이슈: 캘린더 관련 코드를 여러 차례 리팩터링하는 과정에서 `renderAppointments` 내부 로직(예정/지난 약속 분리, 보관함 표시)이 실수로 한 번 삭제됐다가 다시 복원된 이력이 있음 — 현재는 정상 동작 확인됨(문법 검사 통과, 코드 리뷰로 재확인).
 
+같은 날 이후 추가된 수정 사항:
+
+10. **Firebase SDK 로컬 벤더링**: 일부 Safari 콘텐츠 차단 확장(AdGuard, 1Blocker 등)이 `gstatic.com`/`googleapis.com`으로의 요청을 도메인 단위로 차단해, 해당 환경에서는 Firebase SDK가 로드되지 않고 데이터가 조용히 아예 렌더링되지 않는 문제가 있었음. SDK 파일을 `vendor/firebase/`에 내려받아 같은 origin에서 서빙하도록 변경.
+11. **자동 로그인 크래시 수정**: `tryAutoLogin()` IIFE가 스크립트 파싱 시점에 즉시 실행되며 `initApp()`을 호출했는데, `initApp()`이 참조하는 `const firebaseConfig` 선언이 그보다 ~20줄 아래에 있어 매 새로고침(자동 로그인이 타는 유일한 경로)마다 TDZ `ReferenceError`가 발생, `initApp` 중간에서 조용히 실패해 Firebase 리스너 등록이 안 되는 버그가 있었음(수동 로그인 버튼 클릭은 그 시점엔 스크립트 전체가 이미 끝까지 실행된 후라 문제없었음). `tryAutoLogin` 호출 위치를 `initApp` 및 그 의존값 선언 이후로 이동해서 해결.
+
+### 2026-07-08
+
+1. **홈 배경 이미지 추가**: 잠금화면에 `assets/home-bg.jpg` 배경 이미지 적용.
+2. **배경 이미지 티어링 수정**: 처음엔 `body`와 `#lockScreen`에 각각 동일한 배경 이미지를 지정했는데, 두 레이어가 스크롤/리렌더 시 어긋나며 티어링(찢어짐)이 발생. 배경을 `#bgLayer`(항상 `position:fixed; inset:0; z-index:-1`인 별도 레이어 하나)로 일원화하고 `body`/`#lockScreen`은 배경을 갖지 않도록 변경해 뷰포트에 고정된 단일 레이어만 배경을 그리도록 정리.
+
 ### 2026-07-12
 1. **"유효" 탭 신설**: 연결자별 2차 이후 스터디/미팅 회차를 기록하는 `validations` RTDB 노드 + 신규 탭 추가(4-3 참고). 1차는 연결자 등록 정보(`connectAt`/`topic`)를 그대로 재사용하고 별도 저장하지 않음 — 등록/수정 모달의 회차 입력은 항상 "2차"부터 라벨링되어 1차는 폼에서 아예 수정 불가하도록 설계.
 2. **탭 구조 변경**: 기존 최상위 탭이던 "전체 연결 현황"을 "연결자" 탭의 서브탭(`switchContactSubView`)으로 이동시키고, 하단 tabbar의 그 자리를 새 "유효" 탭이 대신함. 최상위 탭은 여전히 3개(연결자/약속/유효).
 3. **연결자 select 표시 형식 변경**: 약속·유효 등록/수정 모달의 연결자 드롭다운이 이름만 보여주던 것을 `contactOptionLabel`로 `이름 - 메인인도자, 서브인도자` 형식으로 변경.
 4. **`preview.html`/`.gitignore` 관련 문서 정리**: 실제 파일이 이미 로컬에도 없는 상태라 문서상 흔적만 정리.
 5. **배포 경로 확인 및 문서화**: 이 저장소는 GitHub Pages(`master` 브랜치)로 서비스되고 있음을 확인(`https://jsha2217.github.io/e186101d/`) — push 후 별도 조치 없이 자동 반영됨을 7번 섹션에 명시.
+6. **유효 탭 캘린더 뷰 추가**: 연결자별 2차(최초 유효) 달성 날짜에 스마일 아이콘을 표시하는 월간 캘린더를 유효 탭에 신설(`renderValidationCalendar`, 약속 탭 캘린더와 독립된 `vCalYear`/`vCalMonth` 상태). 3차 이상 진행되면 같은 자리에서 아이콘 색이 노랑→초록으로 전환(`validationAnchorInfo`), 여러 명이 같은 날짜면 아이콘이 나란히 표시(최대 4개, 초과분은 `+N`). 날짜 클릭 시 그 날 2차 달성자 카드를 `#vDayModal` 팝업으로 보여줌 — 이 과정에서 카드 렌더링을 `renderValidationCard`로 함수 분리해 리스트/팝업 공용화.
+7. **유효 모달 연결자 select 기본값 변경**: 신규 등록 시 select가 첫 연결자로 자동 선택되어 회차 입력란이 곧바로 뜨던 것을, 빈 placeholder("연결자를 선택해주세요")를 기본값으로 추가해 사용자가 직접 골라야만 입력란이 나타나도록 변경(실수로 엉뚱한 연결자에 등록하는 것 방지).
 
 각 변경사항은 커밋 전 diff 검토로 Firebase 설정/기존 `contacts`/`appointments` 스키마·CRUD 로직이 변경되지 않았음을 확인 후 `origin/master`에 푸시함(`validations`는 신규 노드라 기존 데이터에 영향 없음).
+
+### 2026-08-04
+1. **`contacts.baptism` 필드 추가**: 침례 여부를 0/1로 기록하는 필드 신설. **앱 UI에는 입력/표시 화면이 전혀 없음** — 신규 연결자 등록 시(`saveContact`) 항상 0으로 생성되고, 값을 1로 바꾸는 것은 오직 터미널에서 `scripts/set-baptism.sh <contactId> <0|1>`을 직접 실행해야만 가능하도록 의도적으로 설계(값 검증은 스크립트 내부에서 0/1만 허용). 기존 연결자 수정 모달(`saveContact`의 `update()`)은 이 필드를 아예 건드리지 않으므로 일반 수정 작업으로는 값이 리셋되지 않음.
+2. **기존 데이터 백필**: `scripts/set-baptism.sh`를 인자 없이 1회 실행해, 필드가 없던 기존 연결자 118건 전체에 `baptism:0`을 채워넣음(RTDB에 직접 REST PATCH — 코드 배포와 무관한 1회성 데이터 마이그레이션).
