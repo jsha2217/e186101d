@@ -26,8 +26,9 @@
   connectAt            // "YYYY-MM-DDTHH:mm" 연결 날짜/시간
   trait                // 특징 (자유 텍스트, 여러 줄)
   baptism              // 0 또는 1 (침례 여부). 신규 등록 시 항상 0으로 생성.
-                        // 앱 UI에는 이 필드를 위한 입력/표시가 전혀 없음 — 값 변경은
-                        // scripts/set-baptism.sh로 터미널에서 직접 DB를 조작해야만 가능.
+                        // 값 변경은 scripts/set-baptism.sh로 터미널에서 직접 DB를 조작해야만
+                        // 가능 — 모달에는 입력 필드가 없음. 단, 값이 1이면 연결자/약속/유효
+                        // 세 탭의 카드 모두 골드 테두리+뱃지로 시각적으로 강조됨(5-1번 참고).
   createdBy, updatedBy, updatedAt
 
 /appointments/{apptId}
@@ -127,6 +128,8 @@
 - `subGuideArray`: 배열/콤마문자열 두 형태 모두 지원(과거 데이터 호환).
 - `colorForString`: 문자열(연결자 이름)을 해시해 `hsl(...)` 색상으로 변환 — 캘린더 칩 색상 배정에 사용, 같은 이름은 항상 같은 색.
 - `contactOptionLabel`: 연결자 select 옵션 라벨 생성(`이름 - 메인, 서브...`), 약속/유효 모달 공용.
+- `baptizedClass(c)`/`baptizedBadge(c)`: `c.baptism === 1`일 때 카드에 `baptized` 클래스와 골드 뱃지 HTML을 반환(둘 다 아니면 빈 문자열). 연결자(내 연결자/전체 연결 현황)·약속·유효 4곳의 카드 렌더 함수 전부에서 공용으로 호출.
+- **`baptized` 카드 스타일**: 골드 테두리 + 3초 주기 box-shadow "숨쉬기" 펄스(`baptized-breathe`) + 6초 주기 대각선 샤인 스윕(`::before`, `baptized-shine`, `background-position` 애니메이션이라 리페인트 부담 적음). `prefers-reduced-motion: reduce`에서는 두 애니메이션 모두 꺼지고 정적 골드 테두리만 남음. 뱃지(물방울 아이콘 + "침례")는 카드 좌상단(top:9px,left:12px)에 고정 — 약속 카드의 우상단 임박도 뱃지(`urgency-badge`)와 위치가 겹치지 않도록 반대쪽에 배치.
 
 ## 7. Firebase 설정 & 배포
 
@@ -176,3 +179,5 @@
 ### 2026-08-04
 1. **`contacts.baptism` 필드 추가**: 침례 여부를 0/1로 기록하는 필드 신설. **앱 UI에는 입력/표시 화면이 전혀 없음** — 신규 연결자 등록 시(`saveContact`) 항상 0으로 생성되고, 값을 1로 바꾸는 것은 오직 터미널에서 `scripts/set-baptism.sh <contactId> <0|1>`을 직접 실행해야만 가능하도록 의도적으로 설계(값 검증은 스크립트 내부에서 0/1만 허용). 기존 연결자 수정 모달(`saveContact`의 `update()`)은 이 필드를 아예 건드리지 않으므로 일반 수정 작업으로는 값이 리셋되지 않음.
 2. **기존 데이터 백필**: `scripts/set-baptism.sh`를 인자 없이 1회 실행해, 필드가 없던 기존 연결자 118건 전체에 `baptism:0`을 채워넣음(RTDB에 직접 REST PATCH — 코드 배포와 무관한 1회성 데이터 마이그레이션).
+3. **Mariana(메인 인도자 Joy) `baptism:1` 설정**: `scripts/set-baptism.sh`로 해당 연결자 1건만 값을 1로 변경.
+4. **`baptized` 카드 시각 강조 추가**: 애초엔 "UI에 전혀 노출 안 함"으로 설계했으나, 이후 요청으로 `baptism===1`인 카드를 연결자/약속/유효 3개 탭 전부에서 골드 테두리+뱃지+애니메이션으로 강조하도록 변경(6번 공용 유틸 참고, `baptizedClass`/`baptizedBadge`). 기존 팔레트의 브론즈/골드 톤(`--tab-2`, "soon" 뱃지 색)을 확장해 톤을 맞춤. 모바일 뷰포트(390px)에서 Playwright로 실제 렌더링 확인 완료 — 콘솔 에러 없음, 임박도 뱃지와 위치 겹침 없음.
