@@ -220,7 +220,9 @@ test('remote pages contain 15 unique records even when sort values tie', async (
   for(const id of Object.keys(records)) delete records[id];
   for(let i=0;i<16;i++) records[`a${String(i).padStart(2,'0')}`] = {apptAt:`2026-09-29T${String(i).padStart(2,'0')}:00`};
   records.now = {apptAt:'2026-09-30T10:00'};
-  const archive = await vm.runInContext("readPage('appointments','apptAt','desc',null,null,'2026-09-30T10:00')",app.context);
+  assert.equal(vm.runInContext('minuteKey(new Date(2026,8,30,0,0))',app.context),'2026-09-30T00:00');
+  assert.equal(vm.runInContext('minuteKey(new Date(new Date(2026,8,30,0,0).getTime()-60_000))',app.context),'2026-09-29T23:59');
+  const archive = await vm.runInContext("readPage('appointments','apptAt','desc',null,null,'2026-09-30T09:59')",app.context);
   assert.equal(archive.items.length,15);
   assert.equal(archive.hasMore,true);
   assert.equal(archive.items.some(item=>item.key==='now'),false);

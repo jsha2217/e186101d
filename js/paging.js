@@ -56,6 +56,11 @@ function snapshotEntries(snapshot){
   return entries;
 }
 
+function minuteKey(date){
+  const local = new Date(date.getTime() - date.getTimezoneOffset()*60_000);
+  return local.toISOString().slice(0,16);
+}
+
 function watchFirstPage(kind, query, refreshKind){
   if(pageWatchers[kind]) return;
   let initial = true;
@@ -76,7 +81,7 @@ async function readPage(path, field, direction, cursor, lowerBound, upperBound){
   const ascending = direction === 'asc';
   if(cursor) query = ascending ? query.startAt(cursor.value, cursor.key) : query.endAt(cursor.value, cursor.key);
   else if(lowerBound) query = query.startAt(lowerBound);
-  else if(upperBound) query = query.endAt(upperBound, '');
+  else if(upperBound) query = query.endAt(upperBound);
   query = ascending ? query.limitToFirst(PAGE_SIZE + (cursor ? 2 : 1)) : query.limitToLast(PAGE_SIZE + (cursor ? 2 : 1));
   let entries = snapshotEntries(await query.once('value'));
   if(cursor) entries = entries.filter(entry=>entry.key !== cursor.key);
@@ -178,8 +183,10 @@ async function loadAppointmentPage(kind){
   const generation = pagingGeneration;
   try {
     const upcoming = kind === 'upcoming';
-    const nowKey = todayDateValue()+'T'+nowTimeValue();
-    const result = await readPage('appointments','apptAt',upcoming ? 'asc' : 'desc',page.cursor,upcoming ? nowKey : null,upcoming ? null : nowKey);
+    const now = new Date();
+    const nowKey = minuteKey(now);
+    const archiveBound = minuteKey(new Date(now.getTime()-60_000));
+    const result = await readPage('appointments','apptAt',upcoming ? 'asc' : 'desc',page.cursor,upcoming ? nowKey : null,upcoming ? null : archiveBound);
     if(generation !== pagingGeneration) return;
     const items = result.items;
     for(const item of items) appointments[item.key] = item.value;
