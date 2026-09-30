@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>연결자 관리</title>
 
 <script src="vendor/firebase/firebase-app-compat.js"></script>
@@ -11,273 +11,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 
-<style>
-  :root{
-    --paper: #ECE9E1;
-    --paper-line: #D7D0BE;
-    --card: #FFFDF9;
-    --ink: #232A3B;
-    --ink-soft: #5B6376;
-    --tab: #45654B;
-    --tab-2: #8A6A3D;
-    --tab-3: #6C4F6E;
-    --tab-4: #3D5A73;
-    --danger: #A73B32;
-    --gold: #C9A54C;
-    --gold-deep: #8A6A3D;
-    --radius: 3px;
-  }
-  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
-  html,body{ margin:0; padding:0; }
-  body{
-    background:var(--paper);
-    color:var(--ink);
-    font-family:'Inter', sans-serif;
-    min-height:100vh;
-    -webkit-font-smoothing:antialiased;
-  }
-
-  #bgLayer{
-    position:fixed; inset:0; z-index:-1;
-    background-color:var(--paper);
-    background-image:linear-gradient(rgba(236,233,225,0.35),rgba(236,233,225,0.35)), url('assets/home-bg.jpg');
-    background-size:cover, cover;
-    background-position:center, center top;
-    background-repeat:no-repeat, no-repeat;
-  }
-
-  #lockScreen{
-    position:fixed; inset:0; background:transparent;
-    display:flex; align-items:center; justify-content:center;
-    z-index:100; padding:24px;
-  }
-  .lock-card{
-    background:var(--card); border:1px solid var(--paper-line);
-    border-radius:var(--radius); padding:32px 26px; width:100%; max-width:340px;
-    box-shadow:0 6px 20px rgba(35,42,59,0.08); text-align:center;
-  }
-  .lock-card .tab-mark{
-    width:40px;height:40px;border-radius:50%;background:var(--tab);
-    margin:0 auto 16px; display:flex;align-items:center;justify-content:center;
-    color:#fff;font-family:'Fraunces',serif;font-size:20px;
-  }
-  .lock-card h1{ font-family:'Fraunces',serif; font-size:20px; margin:0 0 6px;}
-  .lock-card p{ font-size:13px; color:var(--ink-soft); margin:0 0 18px;}
-  .lock-card label{ display:block; text-align:left; font-size:11.5px; color:var(--ink-soft); margin-bottom:4px; font-family:'JetBrains Mono',monospace;}
-  .lock-card input{
-    width:100%; padding:12px 14px; border:1px solid var(--paper-line);
-    border-radius:var(--radius); font-size:15px; margin-bottom:14px; background:#fff;
-  }
-  .lock-card button{
-    width:100%; padding:12px; border:none; border-radius:var(--radius);
-    background:var(--ink); color:#fff; font-size:14px; font-weight:600; cursor:pointer;
-  }
-  .lock-error{ color:var(--danger); font-size:12px; margin-top:8px; display:none;}
-
-  #app{ display:none; padding-bottom:80px; }
-
-  header{ padding:24px 18px 14px; }
-  header .eyebrow{
-    font-family:'JetBrains Mono',monospace; font-size:11px; letter-spacing:0.1em;
-    color:var(--ink-soft); text-transform:uppercase; margin-bottom:4px;
-    display:flex; justify-content:space-between; align-items:center;
-  }
-  header h1{ font-family:'Fraunces',serif; font-weight:600; font-size:24px; margin:0; }
-  .logout-link{ font-family:'Inter',sans-serif; font-size:11px; color:var(--ink-soft); text-decoration:underline; cursor:pointer; }
-
-  main{ padding:0 18px; }
-
-  .toolbar{ display:flex; gap:8px; margin-bottom:16px; }
-  .btn{
-    padding:10px 14px; border-radius:var(--radius); border:1px solid var(--ink);
-    background:transparent; color:var(--ink); font-size:13px; font-weight:500; cursor:pointer;
-  }
-  .btn.primary{ background:var(--ink); color:#fff; }
-  .btn.small{ padding:6px 10px; font-size:12px; }
-
-  .search-input{
-    width:100%; padding:10px 12px; border:1px solid var(--paper-line); border-radius:var(--radius);
-    background:var(--card); color:var(--ink); font-size:14px; font-family:'Inter',sans-serif;
-    margin-bottom:14px;
-  }
-  .search-input:focus{ outline:none; border-color:var(--ink-soft); }
-
-  .view{ display:none; }
-  .view.active{ display:block; }
-
-  .card{
-    background:var(--card); border:1px solid var(--paper-line); border-radius:var(--radius);
-    margin-bottom:12px; position:relative; box-shadow:0 2px 6px rgba(35,42,59,0.05); overflow:hidden;
-  }
-  .card.guide-main{ background:#E7EFE4; }
-  .card.guide-sub{ background:#F5F8F3; }
-  .card.urgency-upcoming{ border-color:var(--ink-soft); }
-  .card.urgency-soon{ border:1.5px solid #C08A3E; box-shadow:0 2px 10px rgba(138,106,61,0.18); }
-  .card.urgency-critical{ border:2px solid var(--danger); box-shadow:0 0 0 3px rgba(167,59,50,0.14), 0 2px 10px rgba(167,59,50,0.15); }
-  .card.baptized{
-    border:1.5px solid var(--gold);
-    box-shadow:
-      0 0 0 1px rgba(201,165,76,0.35),
-      0 0 0 4px rgba(201,165,76,0.14),
-      0 0 0 8px rgba(201,165,76,0);
-    animation:baptized-aura 3.6s ease-in-out infinite;
-  }
-  @keyframes baptized-aura{
-    0%,100%{
-      box-shadow:
-        0 0 0 1px rgba(201,165,76,0.35),
-        0 0 0 4px rgba(201,165,76,0.14),
-        0 0 0 8px rgba(201,165,76,0);
-    }
-    50%{
-      box-shadow:
-        0 0 2px 2px rgba(201,165,76,0.55),
-        0 0 12px 10px rgba(201,165,76,0.22),
-        0 0 24px 18px rgba(201,165,76,0.10);
-    }
-  }
-  @media (prefers-reduced-motion: reduce){
-    .card.baptized{ animation:none; }
-  }
-  .card .tab{ position:absolute; top:0; left:18px; width:40px; height:7px; border-radius:0 0 4px 4px; }
-  .urgency-badge{
-    position:absolute; top:10px; right:12px; font-family:'JetBrains Mono',monospace;
-    font-size:10px; font-weight:600; letter-spacing:0.02em; padding:3px 8px; border-radius:10px;
-  }
-  .urgency-badge.upcoming{ background:var(--paper-line); color:var(--ink-soft); }
-  .urgency-badge.soon{ background:#C08A3E; color:#fff; }
-  .urgency-badge.critical{ background:var(--danger); color:#fff; }
-  .baptized-badge{
-    position:absolute; top:9px; left:12px; z-index:2;
-    display:inline-flex; align-items:center; gap:4px;
-    padding:3px 8px 3px 6px; border-radius:10px;
-    background:linear-gradient(120deg,#E8C874,var(--gold-deep));
-    color:#3B2A0E; font-family:'JetBrains Mono',monospace; font-size:10px; font-weight:600;
-    letter-spacing:0.02em; box-shadow:0 1px 3px rgba(138,106,61,0.35);
-  }
-  .baptized-badge svg{ width:10px; height:10px; flex-shrink:0; fill:#3B2A0E; }
-  .card-inner{ padding:20px 16px 8px; }
-  .field-row{
-    display:grid; grid-template-columns: 84px 1fr; gap:8px; padding:8px 0;
-    border-bottom:1px dashed var(--paper-line); font-size:14px;
-  }
-  .field-row:last-of-type{ border-bottom:none; }
-  .field-label{
-    font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--ink-soft);
-    text-transform:uppercase; letter-spacing:0.04em; padding-top:2px;
-  }
-  .field-val{ color:var(--ink); word-break:break-word; white-space:pre-wrap; }
-  .field-val.mono{ font-family:'JetBrains Mono',monospace; font-size:13px; }
-  .card-actions{ display:flex; justify-content:flex-end; gap:14px; padding:8px 14px 12px; }
-  .icon-btn{ background:none; border:none; color:var(--ink-soft); font-size:12px; cursor:pointer; padding:2px 4px; }
-  .icon-btn.delete:hover{ color:var(--danger); }
-  .icon-btn.edit:hover{ color:var(--tab); }
-
-  .empty{ text-align:center; padding:50px 20px; color:var(--ink-soft); font-size:14px; }
-
-  .archive-toggle{ margin-top:18px; }
-  #archiveList{ margin-top:10px; }
-  .note{ font-size:11.5px; color:var(--ink-soft); margin-top:20px; line-height:1.6; }
-
-  .validation-list{ margin:0; }
-  .validation-item{
-    display:flex; align-items:flex-start; gap:10px; padding:8px 0;
-    border-bottom:1px dashed var(--paper-line); font-size:14px;
-  }
-  .validation-item:last-child{ border-bottom:none; }
-  .validation-round{
-    font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--ink-soft);
-    flex-shrink:0; width:38px; display:flex; align-items:center; gap:5px;
-    padding-top:2px;
-  }
-  .validation-dot{ width:9px; height:9px; border-radius:50%; flex-shrink:0; display:inline-block; }
-  .validation-meta{ flex:1; min-width:0; }
-  .validation-date{ font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--ink-soft); }
-  .validation-topic{ word-break:break-word; }
-  .validation-empty{ font-size:12.5px; color:var(--ink-soft); padding:6px 0; }
-
-  .calendar{ background:var(--card); border:1px solid var(--paper-line); border-radius:var(--radius); padding:12px 10px; margin-bottom:16px; overflow:hidden; }
-  .cal-header{ display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; }
-  .cal-label{ font-family:'Fraunces',serif; font-size:15px; font-weight:600; }
-  .cal-nav{ flex-shrink:0; background:none; border:1px solid var(--paper-line); border-radius:var(--radius); width:26px; height:26px; font-size:14px; color:var(--ink); cursor:pointer; }
-  .cal-dow{ display:grid; grid-template-columns:repeat(7, minmax(0,1fr)); text-align:center; font-family:'JetBrains Mono',monospace; font-size:9.5px; color:var(--ink-soft); margin-bottom:3px; }
-  .cal-grid{ display:grid; grid-template-columns:repeat(7, minmax(0,1fr)); gap:2px; }
-  .cal-cell{ position:relative; min-width:0; min-height:58px; display:flex; flex-direction:column; align-items:flex-end; padding:3px; border-radius:var(--radius); cursor:pointer; overflow:hidden; }
-  .cal-cell.empty{ cursor:default; }
-  .cal-cell:not(.empty):hover{ background:var(--paper); }
-  .cal-cell:not(.empty):active{ background:var(--paper-line); }
-  .cal-day{ font-size:11px; line-height:1.3; }
-  .cal-cell.today .cal-day{
-    display:inline-flex; align-items:center; justify-content:center;
-    min-width:16px; height:16px; padding:0 3px; border-radius:50%;
-    background:var(--tab); color:#fff; font-weight:700;
-  }
-  .cal-cell.has-appt .cal-day{ font-weight:600; }
-  .cal-chips{ align-self:stretch; display:flex; flex-direction:column; gap:2px; margin-top:auto; width:100%; }
-  .cal-chip{
-    font-family:'Inter',sans-serif; font-size:7.5px; line-height:1.6; padding:0 3px;
-    border-radius:3px; color:#fff; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
-  }
-  .cal-more{ font-family:'JetBrains Mono',monospace; font-size:7px; color:var(--ink-soft); padding-left:1px; }
-  .cal-footer{ display:flex; justify-content:flex-end; align-items:center; margin-top:8px; font-size:11.5px; }
-  .cal-today-btn{ background:none; border:none; color:var(--ink-soft); text-decoration:underline; font-size:11.5px; cursor:pointer; padding:0; }
-  .v-cal-smileys{ align-self:stretch; display:flex; flex-wrap:wrap; gap:2px; margin-top:auto; justify-content:flex-end; }
-  .v-smiley{ width:14px; height:14px; flex-shrink:0; }
-  .v-cal-legend{ display:flex; gap:14px; font-size:11px; color:var(--ink-soft); margin:8px 2px 0; }
-  .v-cal-legend span{ display:inline-flex; align-items:center; gap:4px; }
-  .modal .empty{ padding:24px 10px; }
-
-  .tabbar{
-    position:fixed; bottom:0; left:0; right:0; background:var(--card);
-    border-top:1px solid var(--paper-line); display:flex; z-index:40;
-  }
-  .tabbar button{
-    flex:1; padding:14px 0 10px; background:none; border:none; font-size:12px;
-    color:var(--ink-soft); font-family:'Inter',sans-serif; cursor:pointer;
-  }
-  .tabbar button.active{ color:var(--ink); font-weight:600; border-top:2px solid var(--tab); margin-top:-1px; }
-
-  .subtabbar{ display:flex; gap:6px; margin-bottom:16px; border-bottom:1px solid var(--paper-line); }
-  .sub-tab-btn{
-    flex:1; padding:10px 0; background:none; border:none; border-bottom:2px solid transparent;
-    font-size:13px; font-family:'Inter',sans-serif; color:var(--ink-soft); cursor:pointer;
-  }
-  .sub-tab-btn.active{ color:var(--ink); font-weight:600; border-bottom-color:var(--tab); }
-  .contact-subview{ display:none; }
-  .contact-subview.active{ display:block; }
-
-  .modal-backdrop{
-    position:fixed; inset:0; background:rgba(35,42,59,0.4); display:none;
-    align-items:flex-end; justify-content:center; z-index:60;
-  }
-  .modal-backdrop.show{ display:flex; }
-  .modal{
-    background:#fff; border-radius:16px 16px 0 0; padding:22px 20px 28px; width:100%;
-    max-width:480px; max-height:88vh; overflow-y:auto;
-  }
-  .modal h3{ font-family:'Fraunces',serif; margin:0 0 16px; font-size:18px; }
-  .modal label{ display:block; font-size:11.5px; color:var(--ink-soft); margin-bottom:4px; font-family:'JetBrains Mono',monospace; }
-  .modal input, .modal select, .modal textarea{
-    width:100%; padding:10px; border:1px solid var(--paper-line); border-radius:var(--radius);
-    margin-bottom:14px; font-size:14px; font-family:'Inter',sans-serif;
-  }
-  .modal textarea.autosize{
-    resize:none; overflow:hidden; line-height:1.5;
-  }
-  .subguide-list{ display:flex; flex-direction:column; gap:8px; margin-bottom:10px; }
-  .subguide-row{ display:flex; gap:6px; }
-  .subguide-row input{ flex:1; margin-bottom:0; }
-  .subguide-row button{ flex-shrink:0; padding:0 12px; }
-  .vround-list{ display:flex; flex-direction:column; gap:8px; margin-bottom:10px; }
-  .vround-row{ display:flex; align-items:center; gap:6px; }
-  .vround-num{ font-family:'JetBrains Mono',monospace; font-size:11px; font-weight:600; color:var(--ink-soft); flex-shrink:0; width:26px; }
-  .vround-row input[type="date"]{ flex:0 1 122px; min-width:0; margin-bottom:0; }
-  .vround-row input[type="text"]{ flex:1 1 0; min-width:0; margin-bottom:0; }
-  .vround-row button{ flex-shrink:0; padding:0 12px; }
-  .modal .req::after{ content:" *"; color:var(--danger); }
-  .modal-actions{ display:flex; gap:8px; margin-top:6px; }
-  .modal-actions .btn{ flex:1; text-align:center; }
-</style>
+<link rel="stylesheet" href="styles.css">
 </head>
 <body>
 <div id="bgLayer"></div>
@@ -287,12 +21,12 @@
     <div class="tab-mark">◆</div>
     <h1>연결자 관리</h1>
     <p>이름과 비밀번호를 입력해주세요</p>
-    <label>이름 (영어)</label>
+    <label for="nameInput">이름 (영어)</label>
     <input type="text" id="nameInput" placeholder="이름" autocomplete="off">
-    <label>비밀번호</label>
+    <label for="pwInput">비밀번호</label>
     <input type="password" id="pwInput" placeholder="전체 비밀번호" autocomplete="off">
-    <button onclick="login()">입장</button>
-    <div class="lock-error" id="pwError">이름과 비밀번호를 확인해주세요</div>
+    <button data-action="login">입장</button>
+    <div class="lock-error" id="pwError" role="alert">이름과 비밀번호를 확인해주세요</div>
   </div>
 </div>
 
@@ -300,32 +34,45 @@
   <header>
     <div class="eyebrow">
       <span>연결자 실시간 공유</span>
-      <span class="logout-link" onclick="logout()">로그아웃</span>
+      <button type="button" class="logout-link" data-action="logout">로그아웃</button>
     </div>
     <h1 id="greeting"></h1>
+    <div id="appStatus" class="app-status" role="status" aria-live="polite"></div>
   </header>
 
   <main>
     <div id="contactsView" class="view active">
       <div class="toolbar">
-        <button class="btn primary" onclick="openContactModal()">+ 연결자 등록</button>
+        <button class="btn primary" data-action="new-contact">+ 연결자 등록</button>
       </div>
 
       <div class="subtabbar">
-        <button id="subTabMine" class="sub-tab-btn active" onclick="switchContactSubView('mine')">내 연결자</button>
-        <button id="subTabAll" class="sub-tab-btn" onclick="switchContactSubView('all')">전체 연결 현황</button>
+        <button id="subTabMine" class="sub-tab-btn active" data-action="mine-contacts">내 연결자</button>
+        <button id="subTabAll" class="sub-tab-btn" data-action="all-contacts">전체 연결 현황</button>
       </div>
 
       <div id="myContactsBlock" class="contact-subview active">
-        <input type="text" id="contactSearch" class="search-input" placeholder="검색 (이름, 전화번호, 소속, 특징 등)" oninput="renderContacts()">
+        <input type="search" id="contactSearch" class="search-input" placeholder="이름·전화번호·소속 검색" aria-label="내 연결자 검색" data-render="contacts">
+        <div class="list-controls">
+          <select id="contactRelation" aria-label="내 연결자 관계 필터" data-filter="contacts"><option value="all">모든 관계</option><option value="main">메인 인도</option><option value="sub">서브 인도</option></select>
+          <select id="contactSort" aria-label="내 연결자 정렬" data-filter="contacts"><option value="newest">최근 연결순</option><option value="oldest">오래된 연결순</option><option value="name">이름순</option></select>
+        </div>
+        <div class="result-count" id="contactCount" aria-live="polite"></div>
         <div id="contactList"></div>
+        <button class="btn more-btn" id="contactMore" data-action="more-contacts" hidden>더 보기</button>
         <div class="empty" id="contactEmpty" style="display:none;">아직 등록된 연결자가 없습니다.</div>
         <div class="note">연결자 정보는 언제든 수정할 수 있습니다. 메인 인도자는 등록한 사람 이름으로 자동 입력됩니다.</div>
       </div>
 
       <div id="allContactsBlock" class="contact-subview">
-        <input type="text" id="allContactSearch" class="search-input" placeholder="검색 (이름, 전화번호, 소속, 특징 등)" oninput="renderAllContacts()">
+        <input type="search" id="allContactSearch" class="search-input" placeholder="이름·전화번호·소속 검색" aria-label="전체 연결자 검색" data-render="all-contacts">
+        <div class="list-controls">
+          <select id="allContactRelation" aria-label="전체 연결자 관계 필터" data-filter="all-contacts"><option value="all">모든 관계</option><option value="main">내가 메인</option><option value="sub">내가 서브</option><option value="other">다른 인도자</option></select>
+          <select id="allContactSort" aria-label="전체 연결자 정렬" data-filter="all-contacts"><option value="newest">최근 연결순</option><option value="oldest">오래된 연결순</option><option value="name">이름순</option></select>
+        </div>
+        <div class="result-count" id="allContactCount" aria-live="polite"></div>
         <div id="allContactList"></div>
+        <button class="btn more-btn" id="allContactMore" data-action="more-all-contacts" hidden>더 보기</button>
         <div class="empty" id="allContactEmpty" style="display:none;">아직 등록된 연결자가 없습니다.</div>
         <div class="note">다른 사람이 등록한 연결자를 포함해 전체를 볼 수 있습니다. 나와 관련된(메인·서브 인도자) 연결자는 색으로 구분됩니다.</div>
       </div>
@@ -333,42 +80,51 @@
 
     <div id="appointmentsView" class="view">
       <div class="toolbar">
-        <button class="btn primary" onclick="openApptModal()">+ 약속 등록</button>
+        <button class="btn primary" data-action="new-appt">+ 약속 등록</button>
       </div>
 
+      <details class="calendar-panel" id="apptCalendarPanel">
+        <summary>월간 달력 보기</summary>
       <div class="calendar">
         <div class="cal-header">
-          <button type="button" class="cal-nav" onclick="calPrevMonth()">‹</button>
+          <button type="button" class="cal-nav" data-action="appt-prev" aria-label="약속 이전 달">‹</button>
           <div class="cal-label" id="calLabel"></div>
-          <button type="button" class="cal-nav" onclick="calNextMonth()">›</button>
+          <button type="button" class="cal-nav" data-action="appt-next" aria-label="약속 다음 달">›</button>
         </div>
         <div class="cal-dow"><span>일</span><span>월</span><span>화</span><span>수</span><span>목</span><span>금</span><span>토</span></div>
         <div class="cal-grid" id="calGrid"></div>
         <div class="cal-footer">
-          <button type="button" class="cal-today-btn" onclick="calToday()">오늘로 이동</button>
+          <button type="button" class="cal-today-btn" data-action="appt-today">오늘로 이동</button>
         </div>
       </div>
+      </details>
 
-      <input type="text" id="apptSearch" class="search-input" placeholder="검색 (이름, 전화번호, 소속, 약속 날짜 등)" oninput="renderAppointments()">
+      <input type="search" id="apptSearch" class="search-input" placeholder="연결자·약속 날짜 검색" aria-label="약속 검색" data-render="appointments">
+      <div class="result-count" id="apptCount" aria-live="polite"></div>
       <div id="apptList"></div>
+      <button class="btn more-btn" id="apptMore" data-action="more-appts" hidden>예정된 약속 더 보기</button>
       <div class="empty" id="apptEmpty" style="display:none;">아직 등록된 약속이 없습니다.</div>
 
-      <button class="btn small archive-toggle" id="archiveToggle" onclick="toggleArchive()" style="display:none;"></button>
+      <button class="btn small archive-toggle" id="archiveToggle" data-action="toggle-archive" style="display:none;"></button>
       <div id="archiveList" style="display:none;"></div>
+      <button class="btn more-btn" id="archiveMore" data-action="more-archive" hidden>지난 약속 더 보기</button>
 
       <div class="note">약속 날짜/시간 기준 오름차순으로 정렬됩니다. 시간이 지난 약속은 자동으로 보관함으로 옮겨집니다.</div>
     </div>
 
     <div id="validationsView" class="view">
       <div class="toolbar">
-        <button class="btn primary" onclick="openValidationModal(null)">+ 유효 등록</button>
+        <button class="btn primary" data-action="new-validation">+ 유효 등록</button>
       </div>
+      <p class="section-intro">연결자와 두 번째 만남부터 기록합니다. 첫 만남은 연결 날짜와 공부주제를 사용합니다.</p>
 
+      <details class="calendar-panel" id="validationCalendarPanel">
+        <summary>월간 달력 보기</summary>
       <div class="calendar">
         <div class="cal-header">
-          <button type="button" class="cal-nav" onclick="vCalPrevMonth()">‹</button>
+          <button type="button" class="cal-nav" data-action="validation-prev" aria-label="유효 이전 달">‹</button>
           <div class="cal-label" id="vCalLabel"></div>
-          <button type="button" class="cal-nav" onclick="vCalNextMonth()">›</button>
+          <button type="button" class="cal-nav" data-action="validation-next" aria-label="유효 다음 달">›</button>
         </div>
         <div class="cal-dow"><span>일</span><span>월</span><span>화</span><span>수</span><span>목</span><span>금</span><span>토</span></div>
         <div class="cal-grid" id="vCalGrid"></div>
@@ -377,918 +133,122 @@
           <span><span class="validation-dot" style="background:#2ecc71"></span>3차 이상 진행</span>
         </div>
         <div class="cal-footer">
-          <button type="button" class="cal-today-btn" onclick="vCalToday()">오늘로 이동</button>
+          <button type="button" class="cal-today-btn" data-action="validation-today">오늘로 이동</button>
         </div>
       </div>
+      </details>
 
-      <input type="text" id="validationSearch" class="search-input" placeholder="검색 (이름, 소속, 공부주제 등)" oninput="renderValidations()">
+      <input type="search" id="validationSearch" class="search-input" placeholder="연결자·공부주제 검색" aria-label="유효 검색" data-render="validations">
+      <div class="result-count" id="validationCount" aria-live="polite"></div>
       <div id="validationList"></div>
+      <button class="btn more-btn" id="validationMore" data-action="more-validations" hidden>유효 기록 더 보기</button>
       <div class="empty" id="validationEmpty" style="display:none;"></div>
       <div class="note">유효가 1건이라도 등록된 연결자만 표시되며, 모든 사용자에게 공유됩니다. 가장 최근에 유효가 등록된 연결자가 위로 정렬되고, 회차는 등록된 순서에 따라 자동으로 매겨집니다.</div>
     </div>
   </main>
 
-  <nav class="tabbar">
-    <button id="tabContacts" class="active" onclick="switchView('contacts')">연결자</button>
-    <button id="tabAppt" onclick="switchView('appointments')">약속</button>
-    <button id="tabValidations" onclick="switchView('validations')">유효</button>
+  <nav class="tabbar" aria-label="주요 메뉴">
+    <button id="tabContacts" class="active" aria-current="page" data-action="view-contacts">연결자</button>
+    <button id="tabAppt" data-action="view-appointments">약속</button>
+    <button id="tabValidations" data-action="view-validations">유효</button>
   </nav>
 </div>
 
-<div class="modal-backdrop" id="contactModal">
+<div class="modal-backdrop" id="contactModal" role="dialog" aria-modal="true" aria-labelledby="contactModalTitle">
   <div class="modal">
-    <h3 id="contactModalTitle">연결자 등록</h3>
+    <h3 id="contactModalTitle" tabindex="-1">연결자 등록</h3>
+    <div class="modal-error" id="contactModalError" role="alert" hidden></div>
     <input type="hidden" id="contactId">
-    <label class="req">이름</label>
-    <input type="text" id="cName">
-    <label>전화번호</label>
+    <label class="req" for="cName">이름</label>
+    <input type="text" id="cName" required>
+    <label for="cPhone">전화번호</label>
     <input type="tel" id="cPhone">
-    <label>소속</label>
+    <label for="cOrg">소속</label>
     <input type="text" id="cOrg">
-    <label>공부주제</label>
+    <label for="cTopic">공부주제</label>
     <input type="text" id="cTopic">
-    <label>메인 인도자</label>
-    <input type="text" id="cMainGuide">
+    <label class="req" for="cMainGuide">메인 인도자</label>
+    <input type="text" id="cMainGuide" required>
     <label>서브 인도자</label>
     <div id="cSubGuideList" class="subguide-list"></div>
-    <button type="button" class="btn small" onclick="addSubGuideRow('')">+ 서브 인도자 추가</button>
-    <label>연결 날짜</label>
-    <input type="date" id="cConnectDate">
-    <label>연결 시간</label>
+    <button type="button" class="btn small" data-action="add-sub-guide">+ 서브 인도자 추가</button>
+    <label class="req" for="cConnectDate">연결 날짜</label>
+    <input type="date" id="cConnectDate" required>
+    <label for="cConnectTime">연결 시간</label>
     <input type="time" id="cConnectTime">
-    <label>특징</label>
+    <label for="cTrait">특징</label>
     <textarea id="cTrait" class="autosize" rows="2"></textarea>
     <div class="modal-actions">
-      <button class="btn" onclick="closeContactModal()">취소</button>
-      <button class="btn primary" onclick="saveContact()">저장</button>
+      <button class="btn" data-action="close-contact">취소</button>
+      <button class="btn primary" data-action="save-contact">저장</button>
     </div>
   </div>
 </div>
 
-<div class="modal-backdrop" id="apptModal">
+<div class="modal-backdrop" id="apptModal" role="dialog" aria-modal="true" aria-labelledby="apptModalTitle">
   <div class="modal">
-    <h3 id="apptModalTitle">약속 등록</h3>
+    <h3 id="apptModalTitle" tabindex="-1">약속 등록</h3>
+    <div class="modal-error" id="apptModalError" role="alert" hidden></div>
     <input type="hidden" id="apptId">
-    <label class="req">연결자</label>
-    <select id="aContactId"></select>
-    <label>약속 날짜</label>
-    <input type="date" id="aDate">
-    <label>약속 시간</label>
-    <input type="time" id="aTime">
-    <label>메모</label>
+    <label class="req" for="aContactId">연결자</label>
+    <input type="search" id="aContactFilter" placeholder="이름 또는 인도자로 찾기" aria-label="약속 연결자 찾기" data-contact-filter="appt">
+    <select id="aContactId" required></select>
+    <label class="req" for="aDate">약속 날짜</label>
+    <input type="date" id="aDate" required>
+    <label class="req" for="aTime">약속 시간</label>
+    <input type="time" id="aTime" required>
+    <label for="aMemo">메모</label>
     <textarea id="aMemo" class="autosize" rows="2"></textarea>
     <div class="modal-actions">
-      <button class="btn" onclick="closeApptModal()">취소</button>
-      <button class="btn primary" onclick="saveAppt()">저장</button>
+      <button class="btn" data-action="close-appt">취소</button>
+      <button class="btn primary" data-action="save-appt">저장</button>
     </div>
   </div>
 </div>
 
-<div class="modal-backdrop" id="validationModal">
+<div class="modal-backdrop" id="validationModal" role="dialog" aria-modal="true" aria-labelledby="validationModalTitle">
   <div class="modal">
-    <h3 id="validationModalTitle">유효 등록/수정</h3>
-    <label class="req">연결자</label>
-    <select id="vContactId" onchange="loadValidationRoundsForContact()"></select>
+    <h3 id="validationModalTitle" tabindex="-1">유효 등록/수정</h3>
+    <div class="modal-error" id="validationModalError" role="alert" hidden></div>
+    <label class="req" for="vContactId">연결자</label>
+    <input type="search" id="vContactFilter" placeholder="이름 또는 인도자로 찾기" aria-label="유효 연결자 찾기" data-contact-filter="validation">
+    <select id="vContactId" data-change="validation-contact" required></select>
     <div class="note" id="validationRoundHint"></div>
-    <label>2차부터 회차 기록 (미팅 날짜 / 진행한 공부주제)</label>
+    <p class="round-heading">2차부터의 기록 · 날짜는 필수입니다</p>
     <div id="vRoundList" class="vround-list"></div>
-    <button type="button" class="btn small" id="vAddRoundBtn" onclick="addValidationRoundRow(todayDateValue(),''); updateValidationRoundHint();">+ 회차 추가</button>
+    <button type="button" class="btn small" id="vAddRoundBtn" data-action="add-round">+ 회차 추가</button>
     <div class="modal-actions">
-      <button class="btn" onclick="closeValidationModal()">취소</button>
-      <button class="btn primary" onclick="saveValidation()">저장</button>
+      <button class="btn" data-action="close-validation">취소</button>
+      <button class="btn primary" data-action="save-validation">저장</button>
     </div>
   </div>
 </div>
 
-<div class="modal-backdrop" id="dayModal">
+<div class="modal-backdrop" id="dayModal" role="dialog" aria-modal="true" aria-labelledby="dayModalTitle">
   <div class="modal">
-    <h3 id="dayModalTitle">약속</h3>
+    <h3 id="dayModalTitle" tabindex="-1">약속</h3>
     <div id="dayModalList"></div>
     <div class="modal-actions">
-      <button class="btn" onclick="closeDayModal()">닫기</button>
+      <button class="btn" data-action="close-day">닫기</button>
     </div>
   </div>
 </div>
 
-<div class="modal-backdrop" id="vDayModal">
+<div class="modal-backdrop" id="vDayModal" role="dialog" aria-modal="true" aria-labelledby="vDayModalTitle">
   <div class="modal">
-    <h3 id="vDayModalTitle">유효</h3>
+    <h3 id="vDayModalTitle" tabindex="-1">유효</h3>
     <div id="vDayModalList"></div>
     <div class="modal-actions">
-      <button class="btn" onclick="closeValidationDayModal()">닫기</button>
+      <button class="btn" data-action="close-validation-day">닫기</button>
     </div>
   </div>
 </div>
 
-<script>
-const CORRECT_HASH = "03b0bd366e8184f8d871c3a7c7cc26c73c25b54ff54c64b28b10b898242cdc8a";
-async function sha256(text){
-  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
-  return [...new Uint8Array(buf)].map(b=>b.toString(16).padStart(2,'0')).join('');
-}
-
-let currentUser = null;
-const AUTH_STORAGE_KEY = 'connectorAuthUser';
-
-async function login(){
-  const name = document.getElementById('nameInput').value.trim();
-  const pw = document.getElementById('pwInput').value;
-  const hash = await sha256(pw);
-  if(!name || hash !== CORRECT_HASH){
-    document.getElementById('pwError').style.display = 'block';
-    return;
-  }
-  currentUser = name;
-  localStorage.setItem(AUTH_STORAGE_KEY, currentUser);
-  document.getElementById('lockScreen').style.display = 'none';
-  document.getElementById('app').style.display = 'block';
-  document.getElementById('greeting').textContent = `복 많이 받으세요, ${currentUser}님`;
-  initApp();
-}
-
-function logout(){
-  currentUser = null;
-  localStorage.removeItem(AUTH_STORAGE_KEY);
-  document.getElementById('app').style.display = 'none';
-  document.getElementById('lockScreen').style.display = 'flex';
-  document.getElementById('nameInput').value = '';
-  document.getElementById('pwInput').value = '';
-}
-
-document.getElementById('pwInput').addEventListener('keydown', e=>{ if(e.key==='Enter') login(); });
-
-function autosize(el){
-  el.style.height = 'auto';
-  el.style.height = el.scrollHeight + 'px';
-}
-document.querySelectorAll('textarea.autosize').forEach(el=>{
-  el.addEventListener('input', ()=>autosize(el));
-});
-
-const firebaseConfig = {
-  apiKey: "AIzaSyAORfe5ZENEL-zjX7ZHtFofYapAQZjKydw",
-  authDomain: "paw-hello-sy.firebaseapp.com",
-  databaseURL: "https://paw-hello-sy-default-rtdb.europe-west1.firebasedatabase.app",
-  projectId: "paw-hello-sy",
-};
-
-let db, contacts = {}, appointments = {}, validations = {};
-let appInitialized = false;
-let calYear, calMonth;
-
-function initApp(){
-  if(!firebase.apps.length){
-    firebase.initializeApp(firebaseConfig);
-    db = firebase.database();
-  }
-  if(appInitialized) return;
-  appInitialized = true;
-
-  db.ref('contacts').on('value', snap=>{ contacts = snap.val() || {}; renderContacts(); renderAppointments(); renderAllContacts(); renderValidations(); });
-  db.ref('appointments').on('value', snap=>{ appointments = snap.val() || {}; renderAppointments(); });
-  db.ref('validations').on('value', snap=>{ validations = snap.val() || {}; renderValidations(); });
-
-  // 데이터 변경이 없어도 시간은 계속 흐르므로, 지난 약속이 보관함으로 넘어가도록 주기적으로 다시 그려준다
-  setInterval(renderAppointments, 30000);
-}
-
-(function tryAutoLogin(){
-  const saved = localStorage.getItem(AUTH_STORAGE_KEY);
-  if(!saved) return;
-  currentUser = saved;
-  document.getElementById('lockScreen').style.display = 'none';
-  document.getElementById('app').style.display = 'block';
-  document.getElementById('greeting').textContent = `복 많이 받으세요, ${currentUser}님`;
-  initApp();
-})();
-
-function switchView(v){
-  document.getElementById('contactsView').classList.toggle('active', v==='contacts');
-  document.getElementById('appointmentsView').classList.toggle('active', v==='appointments');
-  document.getElementById('validationsView').classList.toggle('active', v==='validations');
-  document.getElementById('tabContacts').classList.toggle('active', v==='contacts');
-  document.getElementById('tabAppt').classList.toggle('active', v==='appointments');
-  document.getElementById('tabValidations').classList.toggle('active', v==='validations');
-}
-
-function switchContactSubView(v){
-  document.getElementById('myContactsBlock').classList.toggle('active', v==='mine');
-  document.getElementById('allContactsBlock').classList.toggle('active', v==='all');
-  document.getElementById('subTabMine').classList.toggle('active', v==='mine');
-  document.getElementById('subTabAll').classList.toggle('active', v==='all');
-}
-
-function escapeHtml(str){
-  return String(str ?? '').replace(/[&<>"']/g, s=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[s]));
-}
-
-function todayDateValue(){
-  const d = new Date();
-  d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
-  return d.toISOString().slice(0,10);
-}
-function nowTimeValue(){
-  const d = new Date();
-  d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
-  return d.toISOString().slice(11,16);
-}
-
-const WEEKDAYS_KO = ['일','월','화','수','목','금','토'];
-function formatDateWithWeekday(value){
-  if(!value) return '';
-  const [datePart, timePart] = value.split('T');
-  if(!datePart) return '';
-  const d = new Date(datePart + 'T00:00:00');
-  if(isNaN(d.getTime())) return timePart ? `${datePart} ${timePart}` : datePart;
-  const weekday = WEEKDAYS_KO[d.getDay()];
-  return timePart ? `${datePart}(${weekday}) ${timePart}` : `${datePart}(${weekday})`;
-}
-
-const tabColors = ['var(--tab)','var(--tab-2)','var(--tab-3)','var(--tab-4)'];
-const ROUND_COLORS = ['#e74c3c','#f1c40f','#2ecc71'];
-
-function matchesSearch(fields, term){
-  if(!term) return true;
-  return fields.filter(Boolean).join(' ').toLowerCase().includes(term.toLowerCase());
-}
-
-function isMainGuide(c){ return (c.mainGuide||'').trim().toLowerCase() === (currentUser||'').trim().toLowerCase(); }
-function subGuideArray(c){
-  if(Array.isArray(c.subGuide)) return c.subGuide.filter(Boolean);
-  if(c.subGuide) return c.subGuide.split(',').map(s=>s.trim()).filter(Boolean);
-  return [];
-}
-function subGuideDisplay(c){ return subGuideArray(c).join(', '); }
-function isSubGuide(c){
-  const me = (currentUser||'').trim().toLowerCase();
-  return subGuideArray(c).some(s => s.trim().toLowerCase() === me);
-}
-
-function sortByConnectAt(ids){
-  return ids.slice().sort((a,b)=> (contacts[b].connectAt||'').localeCompare(contacts[a].connectAt||''));
-}
-
-function baptizedClass(c){ return c && c.baptism === 1 ? ' baptized' : ''; }
-function baptizedDelayStyle(c, i){ return c && c.baptism === 1 ? ` style="animation-delay:${(i%5)*0.35}s"` : ''; }
-function baptizedBadge(c){
-  if(!c || c.baptism !== 1) return '';
-  return `<div class="baptized-badge"><svg viewBox="0 0 24 24"><path d="M12.8 7.6c-.2-1.3-1.2-2.4-2.5-2.6.1 1.4 1.1 2.5 2.4 2.7.03-.03.07-.07.1-.1Z"/><path d="M17.8 12.4c0-2.4-1.9-3.9-3.8-3.9-1 0-1.6.4-2 .4s-1-.4-2-.4c-1.9 0-3.9 1.5-3.9 4 0 3 2.1 7.3 4.4 7.3.7 0 1-.3 1.5-.3s.8.3 1.5.3c2.2 0 4.3-4 4.3-7.4Z"/></svg>Fruit</div>`;
-}
-
-function renderContacts(){
-  const term = document.getElementById('contactSearch').value.trim();
-  const allIds = Object.keys(contacts).filter(id => isMainGuide(contacts[id]) || isSubGuide(contacts[id]));
-  const ids = sortByConnectAt(allIds.filter(id=>{
-    const c = contacts[id];
-    return matchesSearch([c.name, c.phone, c.org, c.topic, c.mainGuide, subGuideDisplay(c), c.connectAt ? c.connectAt.replace('T',' ') : '', c.trait], term);
-  }));
-  const list = document.getElementById('contactList');
-  const emptyEl = document.getElementById('contactEmpty');
-  emptyEl.style.display = ids.length ? 'none' : 'block';
-  emptyEl.textContent = allIds.length ? '검색 결과가 없습니다.' : '아직 내가 인도자로 등록된 연결자가 없습니다.';
-  list.innerHTML = ids.map((id,i)=>{
-    const c = contacts[id];
-    const guideClass = isMainGuide(c) ? ' guide-main' : (isSubGuide(c) ? ' guide-sub' : '');
-    const row = (label,val,mono)=> val ? `<div class="field-row"><div class="field-label">${label}</div><div class="field-val ${mono?'mono':''}">${escapeHtml(val)}</div></div>` : '';
-    return `
-      <div class="card${guideClass}${baptizedClass(c)}"${baptizedDelayStyle(c,i)}>
-        <div class="tab" style="background:${tabColors[i%tabColors.length]}"></div>
-        ${baptizedBadge(c)}
-        <div class="card-inner">
-          ${row('이름', c.name)}
-          ${row('전화번호', c.phone, true)}
-          ${row('소속', c.org)}
-          ${row('공부주제', c.topic)}
-          ${row('메인 인도자', c.mainGuide)}
-          ${row('서브 인도자', subGuideDisplay(c))}
-          ${row('연결 날짜', formatDateWithWeekday(c.connectAt), true)}
-          ${row('특징', c.trait)}
-        </div>
-        <div class="card-actions">
-          <button class="icon-btn edit" onclick="openContactModal('${id}')">수정</button>
-          <button class="icon-btn delete" onclick="deleteContact('${id}')">삭제</button>
-        </div>
-      </div>`;
-  }).join('');
-}
-
-function renderAllContacts(){
-  const term = document.getElementById('allContactSearch').value.trim();
-  const allIds = Object.keys(contacts);
-  const ids = sortByConnectAt(allIds.filter(id=>{
-    const c = contacts[id];
-    return matchesSearch([c.name, c.phone, c.org, c.topic, c.mainGuide, subGuideDisplay(c), c.connectAt ? c.connectAt.replace('T',' ') : '', c.trait], term);
-  }));
-  const list = document.getElementById('allContactList');
-  const emptyEl = document.getElementById('allContactEmpty');
-  emptyEl.style.display = ids.length ? 'none' : 'block';
-  emptyEl.textContent = allIds.length ? '검색 결과가 없습니다.' : '아직 등록된 연결자가 없습니다.';
-  list.innerHTML = ids.map((id,i)=>{
-    const c = contacts[id];
-    const guideClass = isMainGuide(c) ? ' guide-main' : (isSubGuide(c) ? ' guide-sub' : '');
-    const row = (label,val,mono)=> val ? `<div class="field-row"><div class="field-label">${label}</div><div class="field-val ${mono?'mono':''}">${escapeHtml(val)}</div></div>` : '';
-    return `
-      <div class="card${guideClass}${baptizedClass(c)}"${baptizedDelayStyle(c,i)}>
-        <div class="tab" style="background:${tabColors[i%tabColors.length]}"></div>
-        ${baptizedBadge(c)}
-        <div class="card-inner">
-          ${row('이름', c.name)}
-          ${row('전화번호', c.phone, true)}
-          ${row('소속', c.org)}
-          ${row('공부주제', c.topic)}
-          ${row('메인 인도자', c.mainGuide)}
-          ${row('서브 인도자', subGuideDisplay(c))}
-          ${row('연결 날짜', formatDateWithWeekday(c.connectAt), true)}
-          ${row('특징', c.trait)}
-        </div>
-      </div>`;
-  }).join('');
-}
-
-function addSubGuideRow(value){
-  const list = document.getElementById('cSubGuideList');
-  const row = document.createElement('div');
-  row.className = 'subguide-row';
-  row.innerHTML = `<input type="text" class="subguide-input" value="${escapeHtml(value)}"><button type="button" class="icon-btn delete" onclick="this.parentElement.remove()">✕</button>`;
-  list.appendChild(row);
-}
-function renderSubGuideRows(values){
-  const list = document.getElementById('cSubGuideList');
-  list.innerHTML = '';
-  (values.length ? values : ['']).forEach(v => addSubGuideRow(v));
-}
-function getSubGuideValues(){
-  return Array.from(document.querySelectorAll('#cSubGuideList .subguide-input')).map(i=>i.value.trim()).filter(Boolean);
-}
-
-function openContactModal(id){
-  document.getElementById('contactId').value = id || '';
-  if(id){
-    const c = contacts[id];
-    document.getElementById('contactModalTitle').textContent = '연결자 수정';
-    document.getElementById('cName').value = c.name || '';
-    document.getElementById('cPhone').value = c.phone || '';
-    document.getElementById('cOrg').value = c.org || '';
-    document.getElementById('cTopic').value = c.topic || '';
-    document.getElementById('cMainGuide').value = c.mainGuide || '';
-    renderSubGuideRows(subGuideArray(c));
-    const [connDate, connTime] = (c.connectAt || '').split('T');
-    document.getElementById('cConnectDate').value = connDate || todayDateValue();
-    document.getElementById('cConnectTime').value = connTime || nowTimeValue();
-    document.getElementById('cTrait').value = c.trait || '';
-  } else {
-    document.getElementById('contactModalTitle').textContent = '연결자 등록';
-    document.getElementById('cName').value = '';
-    document.getElementById('cPhone').value = '';
-    document.getElementById('cOrg').value = '';
-    document.getElementById('cTopic').value = '';
-    document.getElementById('cMainGuide').value = currentUser || '';
-    renderSubGuideRows([]);
-    document.getElementById('cConnectDate').value = todayDateValue();
-    document.getElementById('cConnectTime').value = nowTimeValue();
-    document.getElementById('cTrait').value = '';
-  }
-  document.getElementById('contactModal').classList.add('show');
-  autosize(document.getElementById('cTrait'));
-}
-function closeContactModal(){ document.getElementById('contactModal').classList.remove('show'); }
-
-function saveContact(){
-  const name = document.getElementById('cName').value.trim();
-  if(!name){ alert('이름은 필수입니다'); return; }
-  const id = document.getElementById('contactId').value;
-  const data = {
-    name,
-    phone: document.getElementById('cPhone').value.trim(),
-    org: document.getElementById('cOrg').value.trim(),
-    topic: document.getElementById('cTopic').value.trim(),
-    mainGuide: document.getElementById('cMainGuide').value.trim(),
-    subGuide: getSubGuideValues(),
-    connectAt: [document.getElementById('cConnectDate').value, document.getElementById('cConnectTime').value].filter(Boolean).join('T'),
-    trait: document.getElementById('cTrait').value.trim(),
-    updatedBy: currentUser,
-    updatedAt: Date.now(),
-  };
-  if(id){
-    db.ref('contacts/'+id).update(data);
-  } else {
-    data.createdBy = currentUser;
-    data.baptism = 0;
-    db.ref('contacts').push().set(data);
-  }
-  closeContactModal();
-}
-
-function deleteContact(id){
-  if(confirm('이 연결자를 삭제하시겠습니까? 관련 약속과 유효 기록도 함께 삭제됩니다.')){
-    db.ref('contacts/'+id).remove();
-    Object.keys(appointments).forEach(aid=>{
-      if(appointments[aid].contactId === id) db.ref('appointments/'+aid).remove();
-    });
-    Object.keys(validations).forEach(vid=>{
-      if(validations[vid].contactId === id) db.ref('validations/'+vid).remove();
-    });
-  }
-}
-
-let archiveOpen = false;
-function toggleArchive(){
-  archiveOpen = !archiveOpen;
-  document.getElementById('archiveList').style.display = archiveOpen ? 'block' : 'none';
-  renderAppointments();
-}
-
-function ensureCalendarState(){
-  if(calYear === undefined){
-    const d = new Date();
-    calYear = d.getFullYear();
-    calMonth = d.getMonth();
-  }
-}
-
-function colorForString(str){
-  const s = String(str || '');
-  let hash = 0;
-  for(let i=0;i<s.length;i++){ hash = s.charCodeAt(i) + ((hash<<5)-hash); hash |= 0; }
-  const hue = Math.abs(hash) % 360;
-  return `hsl(${hue}, 55%, 42%)`;
-}
-
-const CAL_MAX_CHIPS = 2;
-
-function renderCalendar(idsForDots){
-  ensureCalendarState();
-  const y = calYear, m = calMonth;
-  const startDow = new Date(y, m, 1).getDay();
-  const daysInMonth = new Date(y, m+1, 0).getDate();
-  const todayStr = todayDateValue();
-
-  const contactsByDate = {};
-  idsForDots.forEach(id=>{
-    const a = appointments[id];
-    if(!a || !a.apptDate) return;
-    const c = contacts[a.contactId];
-    if(!c) return;
-    if(!contactsByDate[a.apptDate]) contactsByDate[a.apptDate] = new Map();
-    if(!contactsByDate[a.apptDate].has(a.contactId)) contactsByDate[a.apptDate].set(a.contactId, c.name);
-  });
-
-  let cells = '';
-  for(let i=0;i<startDow;i++) cells += `<div class="cal-cell empty"></div>`;
-  for(let d=1; d<=daysInMonth; d++){
-    const dateStr = `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
-    const dayContacts = contactsByDate[dateStr] ? Array.from(contactsByDate[dateStr].values()) : [];
-    const classes = ['cal-cell'];
-    if(dateStr === todayStr) classes.push('today');
-    if(dayContacts.length) classes.push('has-appt');
-    const shown = dayContacts.slice(0, CAL_MAX_CHIPS);
-    const extra = dayContacts.length - shown.length;
-    const chips = shown.map(name => `<span class="cal-chip" style="background:${colorForString(name)}">${escapeHtml(name)}</span>`).join('')
-      + (extra > 0 ? `<span class="cal-more">+${extra}</span>` : '');
-    cells += `<div class="${classes.join(' ')}" onclick="openDayModal('${dateStr}')">
-      <span class="cal-day">${d}</span>
-      <span class="cal-chips">${chips}</span>
-    </div>`;
-  }
-
-  document.getElementById('calGrid').innerHTML = cells;
-  document.getElementById('calLabel').textContent = `${y}년 ${m+1}월`;
-}
-
-function calPrevMonth(){
-  ensureCalendarState();
-  calMonth--;
-  if(calMonth < 0){ calMonth = 11; calYear--; }
-  renderAppointments();
-}
-function calNextMonth(){
-  ensureCalendarState();
-  calMonth++;
-  if(calMonth > 11){ calMonth = 0; calYear++; }
-  renderAppointments();
-}
-function calToday(){
-  const d = new Date();
-  calYear = d.getFullYear();
-  calMonth = d.getMonth();
-  renderAppointments();
-}
-
-function openDayModal(dateStr){
-  const dayIds = Object.keys(appointments)
-    .filter(id => contacts[appointments[id].contactId] && appointments[id].apptDate === dateStr)
-    .sort((a,b)=> (appointments[a].apptTime||'').localeCompare(appointments[b].apptTime||''));
-  document.getElementById('dayModalTitle').textContent = formatDateWithWeekday(dateStr) + ' 약속';
-  document.getElementById('dayModalList').innerHTML = dayIds.length
-    ? dayIds.map((id,i)=>renderCard(id,i,urgencyInfo(appointments[id]))).join('')
-    : `<div class="empty">이 날짜에 등록된 약속이 없습니다.</div>`;
-  document.getElementById('dayModal').classList.add('show');
-}
-function closeDayModal(){ document.getElementById('dayModal').classList.remove('show'); }
-
-function renderCard(id, i, urgency){
-  const a = appointments[id];
-  const c = contacts[a.contactId] || {};
-  const guideClass = isMainGuide(c) ? ' guide-main' : (isSubGuide(c) ? ' guide-sub' : '');
-  const row = (label,val,mono)=> val ? `<div class="field-row"><div class="field-label">${label}</div><div class="field-val ${mono?'mono':''}">${escapeHtml(val)}</div></div>` : '';
-  const urgencyClass = urgency ? ` urgency-${urgency.tier}` : '';
-  const badge = urgency ? `<div class="urgency-badge ${urgency.tier}">${urgency.label}</div>` : '';
-  return `
-    <div class="card${guideClass}${baptizedClass(c)}${urgencyClass}"${baptizedDelayStyle(c,i)}>
-      <div class="tab" style="background:${tabColors[i%tabColors.length]}"></div>
-      ${baptizedBadge(c)}
-      ${badge}
-      <div class="card-inner">
-        ${row('이름', c.name)}
-        ${row('전화번호', c.phone, true)}
-        ${row('소속', c.org)}
-        ${row('공부주제', c.topic)}
-        ${row('메인 인도자', c.mainGuide)}
-        ${row('서브 인도자', subGuideDisplay(c))}
-        ${row('연결 날짜', formatDateWithWeekday(c.connectAt), true)}
-        ${row('특징', c.trait)}
-        ${row('약속 날짜', formatDateWithWeekday([a.apptDate, a.apptTime].filter(Boolean).join('T')), true)}
-        ${row('메모', a.memo)}
-      </div>
-      <div class="card-actions">
-        <button class="icon-btn edit" onclick="openApptModal('${id}')">수정</button>
-        <button class="icon-btn delete" onclick="deleteAppt('${id}')">삭제</button>
-      </div>
-    </div>`;
-}
-
-function renderAppointments(){
-  const term = document.getElementById('apptSearch').value.trim();
-  const nowKey = todayDateValue() + 'T' + nowTimeValue();
-  const allIds = Object.keys(appointments).filter(id => contacts[appointments[id].contactId]);
-  const ids = allIds.filter(id=>{
-    const a = appointments[id];
-    const c = contacts[a.contactId];
-    return matchesSearch([c.name, c.phone, c.org, c.topic, c.mainGuide, subGuideDisplay(c), c.connectAt ? c.connectAt.replace('T',' ') : '', c.trait, a.apptDate, a.apptTime, a.memo], term);
-  });
-
-  renderCalendar(ids);
-
-  const upcoming = [];
-  const past = [];
-  ids.forEach(id=>{
-    const a = appointments[id];
-    const key = (a.apptDate || '9999-99-99') + 'T' + (a.apptTime || '00:00');
-    (key >= nowKey ? upcoming : past).push({id, key});
-  });
-  upcoming.sort((x,y)=> x.key.localeCompare(y.key));
-  past.sort((x,y)=> y.key.localeCompare(x.key));
-
-  const apptEmptyEl = document.getElementById('apptEmpty');
-  apptEmptyEl.style.display = upcoming.length ? 'none' : 'block';
-  apptEmptyEl.textContent = !allIds.length ? '아직 등록된 약속이 없습니다.' : (term ? '검색 결과가 없습니다.' : '예정된 약속이 없습니다.');
-  document.getElementById('apptList').innerHTML = upcoming.map((x,i)=>renderCard(x.id,i,urgencyInfo(appointments[x.id]))).join('');
-
-  const archiveBtn = document.getElementById('archiveToggle');
-  if(past.length){
-    archiveBtn.style.display = 'block';
-    archiveBtn.textContent = (archiveOpen ? '▲ ' : '▼ ') + `지난 약속 보관함 (${past.length})`;
-  } else {
-    archiveBtn.style.display = 'none';
-  }
-  document.getElementById('archiveList').style.display = archiveOpen ? 'block' : 'none';
-  document.getElementById('archiveList').innerHTML = past.map((x,i)=>renderCard(x.id,i)).join('');
-}
-
-function urgencyInfo(a){
-  const target = new Date(`${a.apptDate}T${a.apptTime || '00:00'}`);
-  const diffMs = target - new Date();
-  if(diffMs < 0) return null;
-  const mins = diffMs / 60000;
-  if(mins < 60) return { tier:'critical', label:`${Math.max(1, Math.round(mins))}분 후` };
-  const hours = mins / 60;
-  if(hours < 24) return { tier:'soon', label:`${Math.round(hours)}시간 후` };
-  const days = hours / 24;
-  if(days < 3) return { tier:'upcoming', label:`${Math.round(days)}일 후` };
-  return null;
-}
-
-function contactOptionLabel(c){
-  const guides = [c.mainGuide, ...subGuideArray(c)].filter(Boolean);
-  return guides.length ? `${c.name} - ${guides.join(', ')}` : c.name;
-}
-
-function populateContactSelect(selectedId){
-  const sel = document.getElementById('aContactId');
-  const ids = Object.keys(contacts).filter(id => isMainGuide(contacts[id]) || isSubGuide(contacts[id]) || id === selectedId);
-  sel.innerHTML = ids.map(id=>`<option value="${id}" ${id===selectedId?'selected':''}>${escapeHtml(contactOptionLabel(contacts[id]))}</option>`).join('');
-}
-
-function openApptModal(id){
-  populateContactSelect(id ? appointments[id].contactId : null);
-  document.getElementById('apptId').value = id || '';
-  if(id){
-    const a = appointments[id];
-    document.getElementById('apptModalTitle').textContent = '약속 수정';
-    document.getElementById('aDate').value = a.apptDate || todayDateValue();
-    document.getElementById('aTime').value = a.apptTime || nowTimeValue();
-    document.getElementById('aMemo').value = a.memo || '';
-  } else {
-    document.getElementById('apptModalTitle').textContent = '약속 등록';
-    document.getElementById('aDate').value = todayDateValue();
-    document.getElementById('aTime').value = nowTimeValue();
-    document.getElementById('aMemo').value = '';
-  }
-  document.getElementById('apptModal').classList.add('show');
-  autosize(document.getElementById('aMemo'));
-}
-function closeApptModal(){ document.getElementById('apptModal').classList.remove('show'); }
-
-function saveAppt(){
-  const contactId = document.getElementById('aContactId').value;
-  if(!contactId){ alert('연결자를 선택해주세요'); return; }
-  const id = document.getElementById('apptId').value;
-  const data = {
-    contactId,
-    apptDate: document.getElementById('aDate').value,
-    apptTime: document.getElementById('aTime').value,
-    memo: document.getElementById('aMemo').value.trim(),
-    updatedBy: currentUser,
-    updatedAt: Date.now(),
-  };
-  if(id){
-    db.ref('appointments/'+id).update(data);
-  } else {
-    data.createdBy = currentUser;
-    db.ref('appointments').push().set(data);
-  }
-  closeApptModal();
-}
-
-function deleteAppt(id){
-  if(confirm('이 약속을 삭제하시겠습니까?')) db.ref('appointments/'+id).remove();
-}
-
-function validationIdsForContact(contactId){
-  return Object.keys(validations).filter(id => validations[id].contactId === contactId);
-}
-function sortedValidationRounds(contactId){
-  return validationIdsForContact(contactId)
-    .slice()
-    .sort((a,b)=> (validations[a].date||'').localeCompare(validations[b].date||'') || a.localeCompare(b));
-}
-function latestValidationDate(contactId){
-  const ids = sortedValidationRounds(contactId);
-  return ids.length ? (validations[ids[ids.length-1]].date || '') : '';
-}
-
-// 2차(=최초 유효)가 달성된 날짜와, 3차 이상까지 진행됐는지 여부. 2차가 아직 없으면 null.
-function validationAnchorInfo(contactId){
-  const roundIds = sortedValidationRounds(contactId);
-  if(!roundIds.length) return null;
-  return { date: validations[roundIds[0]].date || '', advanced: roundIds.length >= 2 };
-}
-
-function renderValidationCard(id, i){
-  const c = contacts[id];
-  const guideClass = isMainGuide(c) ? ' guide-main' : (isSubGuide(c) ? ' guide-sub' : '');
-  const canRegister = isMainGuide(c) || isSubGuide(c);
-  const row = (label,val,mono)=> val ? `<div class="field-row"><div class="field-label">${label}</div><div class="field-val ${mono?'mono':''}">${escapeHtml(val)}</div></div>` : '';
-  const roundIds = sortedValidationRounds(id);
-  const rounds = [{ date: c.connectAt, topic: c.topic }, ...roundIds.map(rid=>({ date: validations[rid].date, topic: validations[rid].topic }))];
-  const historyHtml = rounds.map((r, idx)=>{
-    const color = ROUND_COLORS[Math.min(idx, ROUND_COLORS.length - 1)];
-    return `
-      <div class="validation-item">
-        <div class="validation-round"><span class="validation-dot" style="background:${color}"></span>${idx+1}차</div>
-        <div class="validation-meta">
-          <div class="validation-date">${formatDateWithWeekday(r.date)}</div>
-          <div class="validation-topic">${escapeHtml(r.topic)}</div>
-        </div>
-      </div>`;
-  }).join('');
-  return `
-    <div class="card${guideClass}${baptizedClass(c)}"${baptizedDelayStyle(c,i)}>
-      <div class="tab" style="background:${tabColors[i%tabColors.length]}"></div>
-      ${baptizedBadge(c)}
-      <div class="card-inner">
-        ${row('이름', c.name)}
-        ${row('전화번호', c.phone, true)}
-        ${row('소속', c.org)}
-        ${row('메인 인도자', c.mainGuide)}
-        ${row('서브 인도자', subGuideDisplay(c))}
-        <div class="validation-list">${historyHtml}</div>
-      </div>
-      ${canRegister ? `<div class="card-actions">
-        <button class="icon-btn edit" onclick="openValidationModal('${id}')">수정</button>
-        <button class="icon-btn delete" onclick="deleteAllValidations('${id}')">삭제</button>
-      </div>` : ''}
-    </div>`;
-}
-
-function renderValidations(){
-  const term = document.getElementById('validationSearch').value.trim();
-  const registeredIds = Object.keys(contacts).filter(id => sortedValidationRounds(id).length > 0);
-  const ids = registeredIds.filter(id=>{
-    const c = contacts[id];
-    const roundIds = sortedValidationRounds(id);
-    const historyText = roundIds.map(rid=>`${validations[rid].date||''} ${validations[rid].topic||''}`).join(' ');
-    return matchesSearch([c.name, c.phone, c.org, c.topic, c.mainGuide, subGuideDisplay(c), historyText], term);
-  }).sort((a,b)=> latestValidationDate(b).localeCompare(latestValidationDate(a)));
-
-  renderValidationCalendar(ids);
-
-  const list = document.getElementById('validationList');
-  const emptyEl = document.getElementById('validationEmpty');
-  emptyEl.style.display = ids.length ? 'none' : 'block';
-  emptyEl.textContent = registeredIds.length ? '검색 결과가 없습니다.' : '아직 유효가 등록된 연결자가 없습니다.';
-
-  list.innerHTML = ids.map((id,i)=>renderValidationCard(id,i)).join('');
-}
-
-let vCalYear, vCalMonth;
-const CAL_MAX_ICONS = 4;
-
-function ensureValidationCalendarState(){
-  if(vCalYear === undefined){
-    const d = new Date();
-    vCalYear = d.getFullYear();
-    vCalMonth = d.getMonth();
-  }
-}
-
-function smileyIcon(color){
-  return `<svg class="v-smiley" viewBox="0 0 24 24"><circle cx="12" cy="12" r="11" fill="${color}"/><circle cx="8.5" cy="10" r="1.6" fill="#2a2a2a"/><circle cx="15.5" cy="10" r="1.6" fill="#2a2a2a"/><path d="M7.5 14.5 Q12 18.5 16.5 14.5" stroke="#2a2a2a" stroke-width="1.6" fill="none" stroke-linecap="round"/></svg>`;
-}
-
-function renderValidationCalendar(idsForIcons){
-  ensureValidationCalendarState();
-  const y = vCalYear, m = vCalMonth;
-  const startDow = new Date(y, m, 1).getDay();
-  const daysInMonth = new Date(y, m+1, 0).getDate();
-  const todayStr = todayDateValue();
-
-  const colorsByDate = {};
-  idsForIcons.forEach(id=>{
-    const info = validationAnchorInfo(id);
-    if(!info || !info.date) return;
-    if(!colorsByDate[info.date]) colorsByDate[info.date] = [];
-    colorsByDate[info.date].push(info.advanced ? '#2ecc71' : '#f1c40f');
-  });
-
-  let cells = '';
-  for(let i=0;i<startDow;i++) cells += `<div class="cal-cell empty"></div>`;
-  for(let d=1; d<=daysInMonth; d++){
-    const dateStr = `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
-    const dayColors = colorsByDate[dateStr] || [];
-    const classes = ['cal-cell'];
-    if(dateStr === todayStr) classes.push('today');
-    if(dayColors.length) classes.push('has-appt');
-    const shown = dayColors.slice(0, CAL_MAX_ICONS);
-    const extra = dayColors.length - shown.length;
-    const icons = shown.map(c=>smileyIcon(c)).join('')
-      + (extra > 0 ? `<span class="cal-more">+${extra}</span>` : '');
-    cells += `<div class="${classes.join(' ')}" onclick="openValidationDayModal('${dateStr}')">
-      <span class="cal-day">${d}</span>
-      <span class="v-cal-smileys">${icons}</span>
-    </div>`;
-  }
-
-  document.getElementById('vCalGrid').innerHTML = cells;
-  document.getElementById('vCalLabel').textContent = `${y}년 ${m+1}월`;
-}
-
-function vCalPrevMonth(){
-  ensureValidationCalendarState();
-  vCalMonth--;
-  if(vCalMonth < 0){ vCalMonth = 11; vCalYear--; }
-  renderValidations();
-}
-function vCalNextMonth(){
-  ensureValidationCalendarState();
-  vCalMonth++;
-  if(vCalMonth > 11){ vCalMonth = 0; vCalYear++; }
-  renderValidations();
-}
-function vCalToday(){
-  const d = new Date();
-  vCalYear = d.getFullYear();
-  vCalMonth = d.getMonth();
-  renderValidations();
-}
-
-function openValidationDayModal(dateStr){
-  const ids = Object.keys(contacts).filter(id=>{
-    const info = validationAnchorInfo(id);
-    return info && info.date === dateStr;
-  });
-  document.getElementById('vDayModalTitle').textContent = formatDateWithWeekday(dateStr) + ' 유효 (2차 달성)';
-  document.getElementById('vDayModalList').innerHTML = ids.length
-    ? ids.map((id,i)=>renderValidationCard(id,i)).join('')
-    : `<div class="empty">이 날짜에 2차가 달성된 연결자가 없습니다.</div>`;
-  document.getElementById('vDayModal').classList.add('show');
-}
-function closeValidationDayModal(){ document.getElementById('vDayModal').classList.remove('show'); }
-
-function populateValidationContactSelect(selectedId){
-  const sel = document.getElementById('vContactId');
-  const ids = Object.keys(contacts).filter(id => isMainGuide(contacts[id]) || isSubGuide(contacts[id]) || id === selectedId);
-  const placeholder = `<option value="" ${selectedId?'':'selected'}>연결자를 선택해주세요</option>`;
-  sel.innerHTML = placeholder + ids.map(id=>`<option value="${id}" ${id===selectedId?'selected':''}>${escapeHtml(contactOptionLabel(contacts[id]))}</option>`).join('');
-}
-
-function addValidationRoundRow(date, topic, id){
-  const list = document.getElementById('vRoundList');
-  const row = document.createElement('div');
-  row.className = 'vround-row';
-  row.dataset.vid = id || '';
-  row.innerHTML = `<span class="vround-num"></span><input type="date" class="vround-date" value="${escapeHtml(date||'')}"><input type="text" class="vround-topic" placeholder="진행한 공부주제" value="${escapeHtml(topic||'')}"><button type="button" class="icon-btn delete" onclick="this.parentElement.remove(); renumberValidationRounds(); updateValidationRoundHint();">✕</button>`;
-  list.appendChild(row);
-  renumberValidationRounds();
-}
-function renumberValidationRounds(){
-  document.querySelectorAll('#vRoundList .vround-row').forEach((row, idx)=>{
-    const color = ROUND_COLORS[Math.min(idx + 1, ROUND_COLORS.length - 1)];
-    const numEl = row.querySelector('.vround-num');
-    numEl.textContent = `${idx+2}차`;
-    numEl.style.color = color;
-  });
-}
-function renderValidationRoundRows(rows){
-  const list = document.getElementById('vRoundList');
-  list.innerHTML = '';
-  (rows.length ? rows : [{date: todayDateValue(), topic:'', id:''}]).forEach(r => addValidationRoundRow(r.date, r.topic, r.id));
-}
-function getValidationRoundValues(){
-  const rows = [];
-  document.querySelectorAll('#vRoundList .vround-row').forEach(rowEl=>{
-    const date = rowEl.querySelector('.vround-date').value;
-    const topic = rowEl.querySelector('.vround-topic').value.trim();
-    if(date || topic) rows.push({ id: rowEl.dataset.vid || '', date, topic });
-  });
-  return rows;
-}
-
-function updateValidationRoundHint(){
-  const contactId = document.getElementById('vContactId').value;
-  const hintEl = document.getElementById('validationRoundHint');
-  if(!contactId){ hintEl.textContent = ''; return; }
-  const rowCount = document.querySelectorAll('#vRoundList .vround-row').length;
-  hintEl.textContent = rowCount ? `저장하면 2차부터 ${rowCount+1}차까지 기록됩니다. (1차는 공부주제/연결 날짜를 그대로 사용)` : '저장하면 2차 이후 기록이 모두 삭제됩니다.';
-}
-
-function loadValidationRoundsForContact(){
-  const contactId = document.getElementById('vContactId').value;
-  if(!contactId){
-    document.getElementById('vRoundList').innerHTML = '';
-    updateValidationRoundHint();
-    return;
-  }
-  const roundIds = sortedValidationRounds(contactId);
-  renderValidationRoundRows(roundIds.map(rid=>({ id: rid, date: validations[rid].date||'', topic: validations[rid].topic||'' })));
-  updateValidationRoundHint();
-}
-
-function openValidationModal(presetContactId){
-  document.getElementById('validationModalTitle').textContent = '유효 등록/수정';
-  populateValidationContactSelect(presetContactId);
-  loadValidationRoundsForContact();
-  document.getElementById('validationModal').classList.add('show');
-}
-function closeValidationModal(){ document.getElementById('validationModal').classList.remove('show'); }
-
-function saveValidation(){
-  const contactId = document.getElementById('vContactId').value;
-  if(!contactId){ alert('연결자를 선택해주세요'); return; }
-  const rows = getValidationRoundValues();
-  const existingIds = sortedValidationRounds(contactId);
-  if(!rows.length && !existingIds.length){ alert('미팅 날짜 또는 공부주제를 1개 이상 입력해주세요'); return; }
-  const keptIds = rows.filter(r=>r.id).map(r=>r.id);
-  existingIds.forEach(eid=>{
-    if(!keptIds.includes(eid)) db.ref('validations/'+eid).remove();
-  });
-  rows.forEach(r=>{
-    if(r.id){
-      db.ref('validations/'+r.id).update({
-        contactId,
-        date: r.date,
-        topic: r.topic,
-        updatedBy: currentUser,
-        updatedAt: Date.now(),
-      });
-    } else {
-      db.ref('validations').push().set({
-        contactId,
-        date: r.date,
-        topic: r.topic,
-        createdBy: currentUser,
-        updatedBy: currentUser,
-        updatedAt: Date.now(),
-      });
-    }
-  });
-  closeValidationModal();
-}
-
-function deleteAllValidations(contactId){
-  if(!confirm('이 연결자의 유효 기록을 모두 삭제하시겠습니까?')) return;
-  sortedValidationRounds(contactId).forEach(rid => db.ref('validations/'+rid).remove());
-}
-</script>
+<script src="js/core.js"></script>
+<script src="js/contacts.js"></script>
+<script src="js/appointments.js"></script>
+<script src="js/validations.js"></script>
+<script src="js/paging.js"></script>
+<script src="js/bootstrap.js"></script>
 </body>
 </html>

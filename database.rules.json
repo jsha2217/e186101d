@@ -1,6 +1,15 @@
 {
   "rules": {
     ".read": true,
-    ".write": true
+    ".write": true,
+    "contacts": { ".indexOn": ["connectAt"] },
+    "appointments": { ".indexOn": ["apptAt", "apptDate", "contactId"] },
+    "validations": { ".indexOn": ["contactId"] },
+    "validationSummaries": { ".indexOn": ["latestDate", "firstDate"] },
+    "guideContacts": {
+      "$guide": {
+        "$role": { ".indexOn": [".value"] }
+      }
+    }
   }
 }

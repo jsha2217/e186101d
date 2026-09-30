@@ -2,19 +2,26 @@
 
 빌드 시스템 없는 순수 정적 HTML/JS 앱. 백엔드는 Firebase Realtime Database.
 파일 구성:
-- `index.html` — 실제 서비스 (Firebase 연동, 공유 비밀번호 잠금). 미리보기/데모도 이 파일을 그대로 열어서 확인.
+- `index.html` — 화면 구조와 정적 스크립트 연결.
+- `styles.css` — 전체 화면 스타일.
+- `js/core.js` — 세션, Firebase 구독, 쓰기 오류 처리, 공용 렌더 유틸.
+- `js/contacts.js`, `js/appointments.js`, `js/validations.js` — 기능별 화면·입력 로직.
+- `js/bootstrap.js` — 선언형 `data-action`/`data-render` 이벤트 연결과 자동 로그인 시작.
+- `js/paging.js` — Firebase 15건 조회, 스크롤 추가 로딩, 월간 달력 범위 조회, 조회 인덱스 전환.
+- `tests/app.test.js` — 모의 Firebase 기반 핵심 동작 테스트 (`node --test tests/app.test.js`).
 - `firebase.json`, `.firebaserc`, `database.rules.json` — Firebase RTDB 설정 (Hosting 설정은 없음, 아래 7번 참고)
 - `vendor/firebase/` — Firebase SDK(`firebase-app-compat.js`, `firebase-database-compat.js`)를 CDN이 아닌 로컬 파일로 벤더링(7번 참고).
 - `assets/home-bg.jpg` — 잠금화면 배경 이미지.
 - `scripts/set-baptism.sh` — `contacts.baptism` 필드를 터미널에서 직접 조작하는 스크립트(2번 데이터 모델 참고). 인자 없이 실행하면 백필, `<contactId> <0|1>`로 실행하면 특정 연결자 값 설정.
+- `scripts/migrate-pagination.mjs` — 기존 RTDB 기록의 목록 인덱스 및 약속 복합 날짜를 백필. 기본은 읽기 전용, `--apply`일 때만 기록.
 
 ## 1. 인증 (잠금 화면)
 
 - 로그인은 "이름"(자유 텍스트, 사용자 식별자 역할) + "전체 공용 비밀번호" 2개 입력.
 - 비밀번호를 SHA-256 해시하여 하드코딩된 `CORRECT_HASH`와 비교. 이름 자체는 검증하지 않고 단순히 `currentUser`로 저장되어 이후 모든 "내 연결자/약속" 필터링의 키로 사용됨 (즉 이름을 다르게 입력하면 다른 사람 행세 가능 — 진짜 인증이 아니라 "우리 팀만 아는 공용 비밀번호 + 자기 이름 자율 신고" 방식).
 - 로그인 성공 시 잠금화면 숨기고 `initApp()` 호출, 인사말(`복 많이 받으세요, {이름}님`) 표시.
-- 로그아웃은 `currentUser`를 지우고 잠금화면으로 복귀만 함(Firebase 리스너는 끊지 않음 — `appInitialized` 플래그로 최초 1회만 리스너 등록).
-- 로그인 성공 시 이름을 `localStorage`(`connectorAuthUser`)에 저장해두고, 페이지 로드 시 즉시 IIFE(`tryAutoLogin`)로 저장값을 확인해 있으면 잠금화면을 건너뛰고 바로 `initApp()`을 호출 — 매번 재로그인할 필요 없이 자동 로그인됨. 로그아웃 시에만 `localStorage` 값을 지움.
+- 로그아웃 시 Firebase 리스너와 30초 타이머를 해제하고 메모리의 데이터 스냅샷을 지움. 다른 이름으로 다시 로그인하면 새 구독과 사용자별 필터를 적용함.
+- 로그인 성공 시 이름을 `localStorage`(`connectorAuthUser`)에 저장함. 모든 스크립트가 로드된 뒤 `js/bootstrap.js`에서 저장값을 확인해 자동 로그인함. 로그아웃 시 저장값을 지움.
 
 ## 2. 데이터 모델 (Firebase RTDB 경로)
 
@@ -34,6 +41,7 @@
 /appointments/{apptId}
   contactId            // contacts의 키 참조
   apptDate, apptTime, memo
+  apptAt               // "YYYY-MM-DDTHH:mm", 15건 약속 조회용
   createdBy, updatedBy, updatedAt
 
 /validations/{validationId}
@@ -41,6 +49,15 @@
   date                 // 해당 회차 미팅 날짜(YYYY-MM-DD)
   topic                // 해당 회차에 진행한 공부주제
   createdBy, updatedBy, updatedAt
+
+/guideContacts/{guideKey}/{all|main|sub}/{contactId}
+  connectAt            // 인도자별 연결자 목록 조회 인덱스
+
+/validationSummaries/{contactId}
+  firstDate, latestDate, count
+
+/meta/paginationVersion
+  1                    // 인덱스 백필 완료 후 페이지 조회 활성화
 ```
 
 - `validations`는 연결자당 **2차 이후** 회차만 저장한다. 1차는 별도 저장 없이 `contacts/{id}`의 `connectAt`/`topic`을 그대로 재사용(연결 등록 시점 = 1차 미팅으로 취급).
@@ -48,8 +65,10 @@
 
 ## 3. 실시간 동기화
 
-- `db.ref('contacts').on('value', ...)`, `db.ref('appointments').on('value', ...)`, `db.ref('validations').on('value', ...)` 로 항상 최신 스냅샷을 `contacts`/`appointments`/`validations` 전역 객체에 반영 후 관련 뷰(`renderContacts`/`renderAppointments`/`renderAllContacts`/`renderValidations`)를 재렌더링. `contacts`가 바뀌면 이름/인도자 표시가 걸린 4개 렌더 함수를 모두 다시 부름.
-- `setInterval(renderAppointments, 30000)`: 데이터 변경이 없어도 시간 경과에 따라 "임박도"와 "지난 약속 → 보관함" 전환이 자동 반영되도록 30초마다 재계산.
+- `paginationVersion===1`이면 연결자는 인도자 인덱스, 약속은 `apptAt`, 유효는 `validationSummaries.latestDate` 순서로 첫 15건을 조회한다. 목록 끝에 스크롤하면 다음 15건을 요청한다. 첫 페이지에는 제한된 실시간 리스너를 둔다. 다른 탭은 열 때 처음 조회한다.
+- 달력은 펼쳤을 때 해당 월의 약속 날짜 또는 유효 최초 달성일만 조회한다. 검색·관계 필터·기본 이외 정렬을 사용하면 정확한 전체 결과를 위해 그 세 경로를 한 번 읽고 해당 세션에서 재사용한다. 따라서 **전체 검색은 비용상 예외**다.
+- 인덱스 이전의 DB에서는 기존 전체 구독 방식으로 동작한다. 인덱스와 `apptAt` 백필이 끝난 뒤 `paginationVersion=1`이 되면 새로 로그인/새로고침하는 세션부터 페이지 조회로 전환된다.
+- `setInterval(renderAppointments, 30000)`: 시간 경과에 따른 임박도와 보관함 전환을 갱신함. 로그아웃 시 타이머를 해제함.
 
 ## 4. 화면 구성 (탭 3개: 연결자 / 약속 / 유효, `.view` 토글 + 하단 tabbar)
 
@@ -64,12 +83,14 @@
 - 카드 상단 탭 색상은 `tabColors` 4색 순환(인덱스 기반, 의미 없는 시각적 구분).
 - 날짜 표시는 `formatDateWithWeekday`로 요일을 괄호 병기 (예: `2026-07-07(화)`).
 - 각 카드에 수정/삭제 버튼. 삭제 시 확인창 후 해당 연결자와 **연결된 모든 약속 + 유효 기록도 함께 삭제**.
+- 카드 첫 화면에는 이름·관계·소속·연결일과, 있으면 다음 약속·최근 유효일을 표시한다. 나머지 정보는 `상세 정보 보기`에서 펼친다. 관계 필터, 최신/오래된/이름순 정렬을 제공하며 목록은 15건씩 스크롤 또는 `더 보기`로 늘어난다.
 
 **전체 연결 현황** (`allContactsBlock`)
 - 필터 없이 **모든 사용자의 전체 연결자**를 노출(등록자 무관), 수정/삭제 버튼 없음(읽기 전용).
 - 단, 내가 메인/서브 인도자인 항목은 동일하게 색상 구분(`guide-main`/`guide-sub`)해서 "내 것"을 한눈에 구분 가능.
 - 연결 날짜 **내림차순**(최신 우선) 정렬 + 동일한 검색 로직 + 요일 병기 표시.
 - (이전에는 하단 탭바에 별도 최상위 탭이었으나, 현재는 연결자 탭의 서브탭으로 이동됨.)
+- 전체 목록에도 동일한 검색·관계 필터·정렬·15건씩 보기 기능을 제공한다.
 
 ### 4-2. 약속 탭 (`appointmentsView`)
 - **캘린더 + 카드 리스트** 2단 구성. 캘린더 선택 여부와 무관하게 카드 리스트는 항상 전체 약속을 보여줌(날짜 클릭은 필터가 아니라 별도 팝업 상세보기).
@@ -78,7 +99,7 @@
   - 그리드는 `grid-template-columns: repeat(7, minmax(0,1fr))` + 셀 `overflow:hidden`으로 콘텐츠가 셀을 밀어 오버플로우 나는 것을 방지(과거 `aspect-ratio` 정사각형 셀에서 오버플로우 버그가 있었음).
   - 하루에 약속이 있으면 연결자별로 **문자열 해시 → HSL 색상**(`colorForString`)을 입힌 둥근 사각형 칩(`cal-chip`)을 표시. 같은 연결자의 약속이 여러 건이어도 `contactId` 기준 dedup으로 칩은 1개만.
   - 칩은 셀당 최대 `CAL_MAX_CHIPS`(2)개까지만 그리고, 초과분은 `+N` 텍스트로 축약(정렬 기준은 시간순이 아니라 데이터 등장 순서 — 필요시 개선 여지 있음). 실제 상세 정보 손실은 없음(아래 팝업이 전부 보여줌).
-  - 날짜 셀 클릭 시 `openDayModal(dateStr)` → `#dayModal` 팝업에 그 날짜의 모든 약속 카드를 시간순으로 표시(카드 리스트 필터링과 무관한 별도 상세보기).
+  - 약속이 있는 날짜만 버튼으로 제공한다. 클릭 시 `openDayModal(dateStr)` → `#dayModal` 팝업에 그 날짜의 모든 약속 카드를 시간순으로 표시(카드 리스트 필터링과 무관한 별도 상세보기).
   - `calPrevMonth`/`calNextMonth`/`calToday`로 월 이동, `ensureCalendarState`가 최초 진입 시 현재 월로 초기화.
 - 카드 리스트(`renderCard`, 최상위 함수로 분리되어 있어 메인 리스트/보관함/팝업에서 공용):
   - 대상 연결자가 아직 존재하는 약속만 노출(고아 데이터 방지).
@@ -94,19 +115,21 @@
     - < 3일 → `upcoming` (연한 회색 테두리, "N일 후")
     - 그 이상 → null (강조 없음)
   - 날짜 표시는 "약속 날짜" 한 줄에 `apptDate`+`apptTime`을 합쳐(`[a.apptDate, a.apptTime].filter(Boolean).join('T')`) `formatDateWithWeekday`로 요일까지 병기 — 연결 날짜와 동일하게 날짜/요일/시간이 한 필드에 표시됨(예전엔 "약속 날짜"/"약속 시간" 두 줄로 분리돼 있었음). 단, 등록/수정 모달의 입력 필드(`aDate`/`aTime`)는 그대로 date/time 두 개로 분리되어 있음 — 표시만 합쳐짐.
-- 등록/수정 모달의 연결자 select는 내가 관련된(메인/서브) 연결자만 옵션으로 노출(`populateContactSelect`), 표시 형식은 5번 참고.
+- 등록/수정 모달의 연결자 select는 내가 관련된(메인/서브) 연결자만 옵션으로 노출(`populateContactSelect`). 신규 등록 시에는 빈 안내 항목을 기본 선택해 연결자를 직접 고르게 함.
+- 등록/수정 시 연결자·날짜·시간을 모두 요구한다. 연결자 선택창 위의 검색 입력으로 이름과 인도자를 좁힐 수 있다. 예정/지난 약속은 각각 15건씩 표시하고 더 볼 수 있다.
 
 ### 4-3. 유효 탭 (`validationsView`)
-- "유효"(주기적 방문/스터디 확인 미팅) 진행 이력을 연결자별로 회차 단위로 기록하는 탭. **모든 사용자에게 공유**(등록자 무관 전체 노출, 등록/수정/삭제 권한만 메인·서브 인도자로 제한).
+- "유효"(주기적 방문/스터디 확인 미팅) 진행 이력을 연결자별로 회차 단위로 기록하는 탭. **모든 사용자에게 공유**(등록자 무관 전체 노출, 등록/수정/삭제 버튼은 메인·서브 인도자에게만 표시). 이는 UI 제한이며 RTDB 규칙 차원의 권한 제어는 아님.
 - **월간 캘린더**(`renderValidationCalendar`, 약속 탭 캘린더와 별개의 독립 상태 `vCalYear`/`vCalMonth`): 연결자별 **2차(=최초 유효) 달성일**에 스마일 아이콘을 표시(`validationAnchorInfo`가 각 연결자의 가장 이른 2차 이후 회차 날짜와 "3차 이상 진행 여부"를 계산). 아직 3차가 없으면 노랑, 3차 이상 진행됐으면 초록 스마일로 같은 날짜 자리에서 색만 전환. 같은 날짜에 여러 명이면 아이콘이 나란히 표시되고 셀당 최대 `CAL_MAX_ICONS`(4)개, 초과분은 `+N`으로 축약. 날짜 클릭 시 `openValidationDayModal`로 해당 날짜에 2차를 달성한 연결자들의 카드를 `#vDayModal` 팝업에 표시(`renderValidationCard`로 카드 렌더링 공용화 — 리스트/팝업 공유).
 - **1차는 항상 연결자 등록 정보(`connectAt`/`topic`)를 그대로 사용**하고 `validations` 노드에는 저장하지 않음. `validations`에는 **2차부터**의 회차만 저장됨.
 - 유효가 1건이라도 있는(즉 `validations`에 최소 1개 회차가 있는) 연결자만 목록에 노출(`registeredIds`). 정렬은 **가장 최근 회차 날짜 내림차순**(`latestValidationDate`).
 - 카드에는 연결자 기본 정보(이름/전화/소속/메인·서브 인도자) + 회차별 히스토리(`validation-item`, 1차부터 N차까지 전부, 회차 번호는 `ROUND_COLORS`(빨강/노랑/초록, 3차 이후는 초록 고정) 색 점과 함께 표시).
+- 목록 카드에는 이름·진행 차수·최근 날짜를 먼저 보여 주고, 회차와 연결자 정보는 펼쳐서 확인한다. 목록은 15명씩 표시한다. 캘린더는 기록이 있는 날짜만 상세 버튼을 제공한다.
 - **등록/수정 모달**(`#validationModal`):
   - 연결자 select(`vContactId`, 신규 등록 시 특정 연결자를 프리셋 가능) — 표시 형식은 5번 참고. 프리셋 없이 신규 등록할 때는 빈 placeholder("연결자를 선택해주세요")가 기본 선택되어 있어 **연결자를 직접 골라야만** 회차 입력란이 나타남(자동으로 첫 연결자가 선택되어 실수로 엉뚱한 연결자에 등록되는 것을 방지). select 변경 시 `loadValidationRoundsForContact`가 해당 연결자의 기존 2차 이후 회차를 다시 불러옴(선택 해제 시 회차 입력란도 비움).
   - 회차 입력 행(`#vRoundList`, `addValidationRoundRow`/`renumberValidationRounds`)은 **항상 "2차"부터 라벨링**됨(`idx+2`) — 1차는 폼에 아예 나타나지 않고 수정 불가(1차를 바꾸려면 연결자 정보 자체를 수정해야 함). 신규 등록 시에도 기본으로 빈 행 1개가 "2차"로 표시됨.
   - `+ 회차 추가` 버튼으로 행을 계속 늘릴 수 있고, 각 행 우측 ✕ 버튼으로 삭제 가능(삭제 시 회차 번호 자동 재계산).
-  - 저장(`saveValidation`) 시: 폼에 남아있는 행 중 기존 `id`가 있으면 `update`, 없으면 신규 `push().set()`. 폼에서 삭제된(더 이상 존재하지 않는) 기존 회차는 `db.ref('validations/'+id).remove()`로 정리 — 즉 폼 상태가 곧 그 연결자의 전체 2차 이후 회차 목록의 진실源.
+  - 저장(`saveValidation`) 시: 회차 날짜는 필수다. 폼에 남은 기존 회차의 메타데이터를 유지하고, 신규 행에는 새 키를 생성함. 삭제된 행은 `null`로 설정한 뒤 모든 변경을 루트의 다중 경로 `update()` 한 번으로 적용함. 일부 회차를 지우면 건수를 확인하고, 전체 삭제는 일반 저장에서 차단한다. 폼 상태가 그 연결자의 전체 2차 이후 회차 목록이 됨.
   - 카드의 "삭제" 버튼(`deleteAllValidations`)은 해당 연결자의 2차 이후 회차를 전부 삭제(1차 정보 자체는 연결자 데이터라 안 지워짐).
 - 연결자 삭제(`deleteContact`) 시 관련 `validations` 레코드도 함께 정리됨(2번 데이터 모델 참고).
 
@@ -116,8 +139,10 @@
 - **약속 모달**: 연결자 select(필수)/약속 날짜·시간(기본 오늘/지금)/메모.
 - **유효 모달**: 연결자 select(필수) + 회차별(2차~) 날짜/공부주제 행 목록. 상세는 4-3 참고.
 - **연결자 select 표시 형식** (`contactOptionLabel`, 약속·유효 모달 공용): `이름 - 메인인도자, 서브인도자, 서브인도자` 형태로 표시(인도자 정보가 하나도 없으면 이름만). 여러 연결자 중 인도자 조합으로 빠르게 구분하기 위함.
-- 저장 시 `updatedBy`/`updatedAt` 항상 갱신, 신규 생성 시 `createdBy` 추가. 수정은 `update()`(부분 병합), 신규는 `push().set()`.
-- `saveContact`/`saveAppt`/`saveValidation`에는 클라이언트 측 최소 검증만 존재(이름/연결자 선택 필수, 유효는 회차 행이 1개 이상 있거나 기존 회차가 있어야 함) — 그 외 필드는 전부 선택.
+- 저장 시 `updatedBy`/`updatedAt`을 갱신하고 신규 생성에 `createdBy`를 추가함. 연결자·약속 수정은 `update()`, 신규 생성은 `push().set()`을 사용함. 유효 회차 추가·수정·삭제와 연결자 연쇄 삭제는 루트의 다중 경로 `update()` 한 번으로 묶음. 쓰기에 실패하면 편집 모달을 열어 둠.
+- 연결자는 이름·메인 인도자·연결 날짜, 약속은 연결자·날짜·시간, 유효는 연결자·각 회차 날짜가 필수다. 누락된 입력은 해당 필드 옆에 오류를 표시한다.
+- 모달은 `role="dialog"`, 제목 연결, 초기 초점, 초점 이동 가두기, Escape·바깥 클릭 닫기를 지원한다. 양식이 변경된 상태에서 닫거나 유효 연결자를 바꾸면 확인창을 띄운다. 날짜 상세에서 편집창을 열면 편집창이 위에 표시되고, 저장/삭제 뒤 상세가 갱신된다.
+- 데이터 수신 전에는 로딩 문구를 표시한다. 저장 중에는 제출 버튼을 비활성화하고, 완료·실패 상태를 상단 알림으로 표시한다. 모바일에서는 달력을 기본으로 접고, 회차 날짜와 주제를 두 줄에 배치한다.
 
 ## 6. 공용 유틸
 
@@ -129,13 +154,14 @@
 - `colorForString`: 문자열(연결자 이름)을 해시해 `hsl(...)` 색상으로 변환 — 캘린더 칩 색상 배정에 사용, 같은 이름은 항상 같은 색.
 - `contactOptionLabel`: 연결자 select 옵션 라벨 생성(`이름 - 메인, 서브...`), 약속/유효 모달 공용.
 - `baptizedClass(c)`/`baptizedBadge(c)`: `c.baptism === 1`일 때 카드에 `baptized` 클래스와 골드 뱃지 HTML을 반환(둘 다 아니면 빈 문자열). 연결자(내 연결자/전체 연결 현황)·약속·유효 4곳의 카드 렌더 함수 전부에서 공용으로 호출.
-- **`baptized` 카드 스타일**: 골드 테두리 + 3초 주기 box-shadow "숨쉬기" 펄스(`baptized-breathe`) + 6초 주기 대각선 샤인 스윕(`::before`, `baptized-shine`, `background-position` 애니메이션이라 리페인트 부담 적음). `prefers-reduced-motion: reduce`에서는 두 애니메이션 모두 꺼지고 정적 골드 테두리만 남음. 뱃지(물방울 아이콘 + "침례")는 카드 좌상단(top:9px,left:12px)에 고정 — 약속 카드의 우상단 임박도 뱃지(`urgency-badge`)와 위치가 겹치지 않도록 반대쪽에 배치.
+- **`baptized` 카드 스타일**: 골드 테두리와 3.6초 주기 후광 애니메이션(`baptized-aura`). `prefers-reduced-motion: reduce`에서는 애니메이션을 끔. 뱃지는 카드 좌상단, 임박도 뱃지는 우상단에 배치.
 
 ## 7. Firebase 설정 & 배포
 
 - 프로젝트 ID: `paw-hello-sy`, RTDB 리전: `europe-west1`.
-- `firebaseConfig`(apiKey 포함)가 `index.html`에 평문 노출되어 있으나, RTDB 규칙 자체가 완전 공개이므로 apiKey 은닉 여부는 실질적 의미 없음(공개 앱 특성상 정상적인 패턴).
+- `firebaseConfig`(apiKey 포함)는 `js/core.js`에 있음. 클라이언트 앱의 설정값은 공개되며, RTDB 규칙이 완전 공개라 실제 접근 제어가 없음. 인증과 규칙 교체는 별도 데이터 접근 설계가 필요함.
 - Firebase SDK는 CDN(`gstatic.com`)이 아닌 `vendor/firebase/`에 로컬로 벤더링되어 있음 — 일부 Safari 콘텐츠 차단 확장(AdGuard, 1Blocker 등)이 `gstatic.com`/`googleapis.com` 요청을 도메인 단위로 차단해 SDK 로드 자체가 실패하고 데이터가 아예 렌더링되지 않는 문제가 있었음. 같은 origin에서 서빙하면 이 차단을 피할 수 있음.
+- 15건 조회를 적용할 때는 `database.rules.json`의 조회 인덱스를 Firebase에 배포하고, 코드 배포 후 `scripts/migrate-pagination.mjs --apply`로 기존 기록을 백필해야 한다. 백필 전에는 구버전 전체 조회를 유지한다.
 - `firebase.json`은 database rules 경로만 지정 — Hosting 설정은 없음. **실제 배포는 GitHub Pages**(`jsha2217/e186101d` 저장소, `master` 브랜치, 루트 경로) — https://jsha2217.github.io/e186101d/ 로 서비스되며, `master`에 push하면 별도 빌드/승인 절차 없이 자동 반영(보통 1~2분 내).
 
 ## 8. 세션 변경 이력
@@ -181,3 +207,13 @@
 2. **기존 데이터 백필**: `scripts/set-baptism.sh`를 인자 없이 1회 실행해, 필드가 없던 기존 연결자 118건 전체에 `baptism:0`을 채워넣음(RTDB에 직접 REST PATCH — 코드 배포와 무관한 1회성 데이터 마이그레이션).
 3. **Mariana(메인 인도자 Joy) `baptism:1` 설정**: `scripts/set-baptism.sh`로 해당 연결자 1건만 값을 1로 변경.
 4. **`baptized` 카드 시각 강조 추가**: 애초엔 "UI에 전혀 노출 안 함"으로 설계했으나, 이후 요청으로 `baptism===1`인 카드를 연결자/약속/유효 3개 탭 전부에서 골드 테두리+뱃지+애니메이션으로 강조하도록 변경(6번 공용 유틸 참고, `baptizedClass`/`baptizedBadge`). 기존 팔레트의 브론즈/골드 톤(`--tab-2`, "soon" 뱃지 색)을 확장해 톤을 맞춤. 모바일 뷰포트(390px)에서 Playwright로 실제 렌더링 확인 완료 — 콘솔 에러 없음, 임박도 뱃지와 위치 겹침 없음.
+
+### 2026-09-30
+
+- `index.html`의 CSS/JS를 기능별 파일로 분리하고, 인라인 이벤트를 `data-action` 이벤트 위임으로 교체.
+- 연결자 카드/필드 및 검색 로직을 공용화하고, 캘린더 날짜를 키보드 접근 가능한 버튼으로 변경.
+- 로그인 전환 시 구독을 해제·재등록하고 저장 실패 시 입력창이 유지되도록 오류 처리.
+- 유효 회차와 연결자 연쇄 삭제는 한 번의 다중 경로 갱신으로 처리.
+- 모의 Firebase 기반 테스트와 로컬 브라우저 렌더링으로 확인.
+- `UX_AUDIT.md`의 P0~P2 문제를 조치했다. 날짜 상세 편집 스택·이탈 확인·전체 유효 삭제 차단·필수 날짜 검증·저장 상태 표시·요약 카드·필터/정렬/페이지 단위 표시·모바일 달력 접기·필드 오류와 모달 접근성을 적용했다. 실제 Firebase 데이터는 수정하지 않고 가상 데이터 미리보기로 화면을 확인했다.
+- 이후 DB 다운로드량을 줄이기 위해 15건 조회·스크롤 추가 로딩과 조회 인덱스 이전 코드를 추가했다. 기존 데이터의 백필과 인덱스 규칙 배포가 끝나기 전에는 `paginationVersion`이 없어 기존 조회를 유지한다.
