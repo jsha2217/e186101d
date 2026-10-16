@@ -4,14 +4,14 @@ let archiveLimit = 15;
 
 function resetApptPage(){ apptLimit = 15; archiveLimit = 15; renderAppointments(); }
 function moreAppts(){
-  if(pagedMode && !fullDataLoaded){
+  if(pagedMode && !hasFullData('appointments')){
     if(pageState.upcoming.loading) return;
     apptLimit += 15; loadAppointmentPage('upcoming'); return;
   }
   apptLimit += 15; renderAppointments();
 }
 function moreArchive(){
-  if(pagedMode && !fullDataLoaded){
+  if(pagedMode && !hasFullData('appointments')){
     if(pageState.archive.loading) return;
     archiveLimit += 15; loadAppointmentPage('archive'); return;
   }
@@ -159,7 +159,7 @@ function renderAppointments(){
     return;
   }
   const nowKey = todayDateValue() + 'T' + nowTimeValue();
-  const sourceIds = pagedMode && !fullDataLoaded
+  const sourceIds = pagedMode && !hasFullData('appointments')
     ? [...pageState.upcoming.ids, ...pageState.archive.ids]
     : Object.keys(appointments);
   const allIds = sourceIds.filter(id => appointments[id] && contacts[appointments[id].contactId]);
@@ -169,7 +169,7 @@ function renderAppointments(){
     return matchesSearch([c.name, c.phone, c.org, c.topic, c.mainGuide, subGuideDisplay(c), c.connectAt ? c.connectAt.replace('T',' ') : '', c.trait, a.apptDate, a.apptTime, a.memo], term);
   });
 
-  const calendarIds = pagedMode && !fullDataLoaded
+  const calendarIds = pagedMode && !hasFullData('appointments')
     ? calendarApptIds.filter(id=>appointments[id] && contacts[appointments[id].contactId] && (!term || matchesSearch([contacts[appointments[id].contactId].name,appointments[id].memo],term)))
     : ids;
   renderCalendar(calendarIds);
@@ -189,21 +189,21 @@ function renderAppointments(){
     : past.length ? '예정된 약속은 없습니다. 아래 보관함에서 지난 약속을 확인하세요.'
     : term ? '검색 결과가 없습니다.' : '예정된 약속이 없습니다.';
   const shownUpcoming = Math.min(upcoming.length, apptLimit);
-  document.getElementById('apptCount').textContent = pagedMode && !fullDataLoaded
+  document.getElementById('apptCount').textContent = pagedMode && !hasFullData('appointments')
     ? `예정 ${upcoming.length}건 불러옴` : `예정 ${upcoming.length}건 · 지난 약속 ${past.length}건`;
   setListHtml(document.getElementById('apptList'), upcoming.slice(0,shownUpcoming).map((x,i)=>renderCard(x.id,i,urgencyInfo(appointments[x.id]))).join(''));
-  document.getElementById('apptMore').hidden = pagedMode && !fullDataLoaded ? !pageState.upcoming.hasMore : shownUpcoming >= upcoming.length;
+  document.getElementById('apptMore').hidden = pagedMode && !hasFullData('appointments') ? !pageState.upcoming.hasMore : shownUpcoming >= upcoming.length;
 
-  if(past.length || (pagedMode && !fullDataLoaded && !pageState.archive.ready)){
+  if(past.length || (pagedMode && !hasFullData('appointments') && !pageState.archive.ready)){
     archiveBtn.style.display = 'block';
-    archiveBtn.textContent = (archiveOpen ? '▲ ' : '▼ ') + (pagedMode && !fullDataLoaded ? `지난 약속 보관함${pageState.archive.ready ? ` (${past.length}건 불러옴)` : ''}` : `지난 약속 보관함 (${past.length})`);
+    archiveBtn.textContent = (archiveOpen ? '▲ ' : '▼ ') + (pagedMode && !hasFullData('appointments') ? `지난 약속 보관함${pageState.archive.ready ? ` (${past.length}건 불러옴)` : ''}` : `지난 약속 보관함 (${past.length})`);
   } else {
     archiveBtn.style.display = 'none';
   }
   document.getElementById('archiveList').style.display = archiveOpen ? 'block' : 'none';
   const shownPast = Math.min(past.length, archiveLimit);
   setListHtml(document.getElementById('archiveList'), archiveOpen ? past.slice(0,shownPast).map((x,i)=>renderCard(x.id,i)).join('') : '');
-  document.getElementById('archiveMore').hidden = !archiveOpen || (pagedMode && !fullDataLoaded ? !pageState.archive.hasMore : shownPast >= past.length);
+  document.getElementById('archiveMore').hidden = !archiveOpen || (pagedMode && !hasFullData('appointments') ? !pageState.archive.hasMore : shownPast >= past.length);
 }
 
 function urgencyInfo(a){
@@ -274,15 +274,26 @@ async function saveAppt(){
     updatedAt: Date.now(),
   };
   if(id){
-    await writeData(()=>db.ref('appointments/'+id).update(data), ()=>{
+    const previous = appointments[id];
+    const changed = Object.fromEntries(Object.entries(data).filter(([field,value])=>previous?.[field]!==value));
+    if(Object.keys(changed).every(field=>['updatedBy','updatedAt'].includes(field))){
+      closeModal('apptModal',true);
+      setAppStatus('변경 사항이 없습니다.','success');
+      return;
+    }
+    const membershipChanged = previous?.apptAt !== data.apptAt || previous?.contactId !== data.contactId;
+    await writeData(()=>db.ref('appointments/'+id).update(changed), ()=>{
       closeModal('apptModal', true);
-      if(pagedMode) refreshAfterMutation('appointments','contacts');
+      appointments[id] = {...appointments[id], ...data};
+      if(pagedMode) refreshAfterMutation('appointments',{membershipChanged});
     });
   } else {
     data.createdBy = currentUser;
-    await writeData(()=>db.ref('appointments').push().set(data), ()=>{
+    const record = db.ref('appointments').push();
+    await writeData(()=>record.set(data), ()=>{
       closeModal('apptModal', true);
-      if(pagedMode) refreshAfterMutation('appointments','contacts');
+      appointments[record.key] = data;
+      if(pagedMode) refreshAfterMutation('appointments');
     });
   }
 }
@@ -293,6 +304,6 @@ async function deleteAppt(id){
   const name = contacts[a.contactId]?.name || '연결자';
   if(confirm(`${name}의 ${a.apptDate || '날짜 미정'} 약속을 삭제할까요?`)) await writeData(()=>db.ref('appointments/'+id).remove(), ()=>{
     delete appointments[id];
-    if(pagedMode) refreshAfterMutation('appointments','contacts');
+    if(pagedMode) refreshAfterMutation('appointments');
   }, '삭제');
 }

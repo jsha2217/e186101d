@@ -67,7 +67,7 @@ function createApp(options={}){
     crypto:webcrypto, TextEncoder, console:{error(){}}, alert:message=>alerts.push(message),
     confirm:()=>true, setInterval:()=>1, clearInterval(){}, setTimeout:()=>1, clearTimeout(){}, Date,
   });
-  for(const file of ['core.js','auth.js','contacts.js','appointments.js','validations.js','paging.js','bootstrap.js']){
+  for(const file of ['core.js','auth.js','contacts.js','appointments.js','validations.js','paging.js','data-cache.js','bootstrap.js']){
     vm.runInContext(fs.readFileSync(path.join(root,'js',file),'utf8'), context, {filename:file});
   }
   // Business-logic tests begin after a verified team login; auth tests opt out.

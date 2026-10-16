@@ -57,7 +57,7 @@ function renderValidationCard(id, i){
 let validationLimit = 15;
 function resetValidationPage(){ validationLimit = 15; renderValidations(); }
 function moreValidations(){
-  if(pagedMode && !fullDataLoaded){
+  if(pagedMode && !hasFullData('validations')){
     if(pageState.validations.loading) return;
     validationLimit += 15; loadValidationPage(); return;
   }
@@ -76,7 +76,7 @@ function renderValidations(){
     document.getElementById('validationMore').hidden = true;
     return;
   }
-  const sourceIds = pagedMode && !fullDataLoaded ? pageState.validations.ids : Object.keys(contacts);
+  const sourceIds = pagedMode && !hasFullData('validations') ? pageState.validations.ids : Object.keys(contacts);
   const registeredIds = sourceIds.filter(id => contacts[id] && sortedValidationRounds(id).length > 0);
   const ids = registeredIds.filter(id=>{
     const c = contacts[id];
@@ -85,15 +85,15 @@ function renderValidations(){
     return matchesSearch([c.name, c.phone, c.org, c.topic, c.mainGuide, subGuideDisplay(c), historyText], term);
   }).sort((a,b)=> latestValidationDate(b).localeCompare(latestValidationDate(a)));
 
-  renderValidationCalendar(pagedMode && !fullDataLoaded ? calendarValidationIds : ids);
+  renderValidationCalendar(pagedMode && !hasFullData('validations') ? calendarValidationIds : ids);
 
   emptyEl.style.display = ids.length ? 'none' : 'block';
   emptyEl.textContent = registeredIds.length ? '검색 결과가 없습니다.' : '아직 유효가 등록된 연결자가 없습니다.';
 
   const shown = Math.min(ids.length,validationLimit);
-  document.getElementById('validationCount').textContent = pagedMode && !fullDataLoaded ? `${shown}명 불러옴` : `총 ${ids.length}명 · ${shown}명 표시`;
+  document.getElementById('validationCount').textContent = pagedMode && !hasFullData('validations') ? `${shown}명 불러옴` : `총 ${ids.length}명 · ${shown}명 표시`;
   setListHtml(list, ids.slice(0,shown).map((id,i)=>renderValidationCard(id,i)).join(''));
-  document.getElementById('validationMore').hidden = pagedMode && !fullDataLoaded ? !pageState.validations.hasMore : shown >= ids.length;
+  document.getElementById('validationMore').hidden = pagedMode && !hasFullData('validations') ? !pageState.validations.hasMore : shown >= ids.length;
 }
 
 let vCalYear, vCalMonth;
@@ -270,10 +270,8 @@ async function loadValidationRoundsForContact(force=false){
     document.getElementById('validationRoundHint').textContent = '회차를 불러오는 중입니다.';
     document.querySelector('[data-action="save-validation"]').disabled = true;
     try {
-      const snapshot = await db.ref('validations').orderByChild('contactId').equalTo(contactId).once('value');
+      await fetchRelatedCollection('validations',contactId);
       if(request !== validationRoundsRequest || contactId !== activeValidationContactId) return;
-      Object.keys(validations).forEach(id=>{ if(validations[id].contactId===contactId) delete validations[id]; });
-      Object.assign(validations, snapshot.val() || {});
     } catch(error){
       if(request !== validationRoundsRequest) return;
       console.error('Validation rounds failed:', error);
@@ -339,6 +337,7 @@ async function saveValidation(){
   removedIds.forEach(id=>{ updates['validations/'+id] = null; });
   const now = Date.now();
   rows.forEach(r=>{
+    if(r.id && validations[r.id]?.date===r.date && (validations[r.id].topic || '')===r.topic) return;
     const id = r.id || db.ref('validations').push().key;
     updates['validations/'+id] = {
       ...(r.id ? validations[id] : {createdBy:currentUser}),
@@ -346,10 +345,22 @@ async function saveValidation(){
     };
   });
   const dates = rows.map(row=>row.date).filter(Boolean).sort();
-  updates['validationSummaries/'+contactId] = {firstDate:dates[0], latestDate:dates.at(-1), count:rows.length};
+  const previousDates = existingIds.map(id=>validations[id].date || '').sort();
+  const membershipChanged = JSON.stringify(previousDates) !== JSON.stringify(dates);
+  if(membershipChanged) updates['validationSummaries/'+contactId] = {firstDate:dates[0], latestDate:dates.at(-1), count:rows.length};
+  if(!Object.keys(updates).length){
+    closeModal('validationModal',true);
+    setAppStatus('변경 사항이 없습니다.','success');
+    return;
+  }
   await writeData(()=>db.ref().update(updates), ()=>{
     closeModal('validationModal', true);
-    if(pagedMode) refreshAfterMutation('validations','contacts');
+    for(const [path,value] of Object.entries(updates)){
+      if(!path.startsWith('validations/')) continue;
+      const id = path.slice('validations/'.length);
+      if(value) validations[id] = value; else delete validations[id];
+    }
+    if(pagedMode) refreshAfterMutation('validations',{membershipChanged});
   });
 }
 
@@ -365,6 +376,6 @@ async function deleteAllValidations(contactId){
   sortedValidationRounds(contactId).forEach(id=>{ updates['validations/'+id] = null; });
   await writeData(()=>db.ref().update(updates), ()=>{
     sortedValidationRounds(contactId).forEach(id=>{ delete validations[id]; });
-    if(pagedMode) refreshAfterMutation('validations','contacts');
+    if(pagedMode) refreshAfterMutation('validations');
   }, '삭제');
 }

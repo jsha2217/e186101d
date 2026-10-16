@@ -52,7 +52,7 @@ function renderContactList({searchId, listId, emptyId, countId, moreId, relation
     return;
   }
   const needsFull = needsFullContactData(mine);
-  if(needsFull && !fullDataLoaded){
+  if(needsFull && !hasFullData('contacts')){
     list.innerHTML = '';
     emptyEl.style.display = 'block';
     emptyEl.textContent = '전체 결과를 불러오는 중입니다.';
@@ -60,7 +60,7 @@ function renderContactList({searchId, listId, emptyId, countId, moreId, relation
     moreEl.hidden = true;
     return;
   }
-  const sourceIds = pagedMode && !fullDataLoaded ? pageState[mine?'mine':'all'].ids : Object.keys(contacts);
+  const sourceIds = pagedMode && !hasFullData('contacts') ? pageState[mine?'mine':'all'].ids : Object.keys(contacts);
   const allIds = sourceIds.filter(id => contacts[id] && (!mine || isMainGuide(contacts[id]) || isSubGuide(contacts[id])));
   const relation = document.getElementById(relationId).value;
   const ids = allIds.filter(id => {
@@ -79,9 +79,12 @@ function renderContactList({searchId, listId, emptyId, countId, moreId, relation
   emptyEl.textContent = allIds.length ? '검색 결과가 없습니다.'
     : mine ? '아직 내가 인도자로 등록된 연결자가 없습니다.' : '아직 등록된 연결자가 없습니다.';
   const shown = Math.min(ids.length, contactLimits[mine?'mine':'all']);
-  countEl.textContent = pagedMode && !fullDataLoaded ? `${shown}건 불러옴` : `총 ${ids.length}건 · ${shown}건 표시`;
+  countEl.textContent = pagedMode && !hasFullData('contacts') ? `${shown}건 불러옴` : `총 ${ids.length}건 · ${shown}건 표시`;
   setListHtml(list, ids.slice(0,shown).map((id,i)=>renderContactCard(id,i,mine)).join(''));
-  moreEl.hidden = pagedMode && !fullDataLoaded ? !pageState[mine?'mine':'all'].hasMore : shown >= ids.length;
+  contactActivityTargets.set(mine?'mine':'all',new Set(ids.slice(0,shown)));
+  if(document.getElementById('contactsView').classList.contains('active')
+    && document.getElementById(mine?'myContactsBlock':'allContactsBlock').classList.contains('active')) ensureContactActivities(ids.slice(0,shown));
+  moreEl.hidden = pagedMode && !hasFullData('contacts') ? !pageState[mine?'mine':'all'].hasMore : shown >= ids.length;
 }
 
 function renderContacts(){
@@ -98,7 +101,7 @@ function resetContactPage(mine){
 }
 
 function moreContacts(mine){
-  if(pagedMode && !fullDataLoaded){
+  if(pagedMode && !hasFullData('contacts')){
     if(pageState[mine?'mine':'all'].loading) return;
     contactLimits[mine?'mine':'all'] += 15;
     loadContactPage(mine?'mine':'all');
@@ -181,13 +184,25 @@ async function saveContact(){
     data.baptism = 0;
   }
   const contactId = id || db.ref('contacts').push().key;
-  const updatedContact = id ? {...contacts[id], ...data} : data;
-  const updates = {['contacts/'+contactId]: updatedContact,
-    ...guideIndexPatch(contactId, id ? contacts[id] : null, updatedContact)};
+  const previousContact = id ? contacts[id] : null;
+  if(id && Object.entries(data).filter(([field])=>!['updatedBy','updatedAt'].includes(field))
+    .every(([field,value])=>JSON.stringify(previousContact?.[field])===JSON.stringify(value))){
+    closeModal('contactModal',true);
+    setAppStatus('변경 사항이 없습니다.','success');
+    return;
+  }
+  const updatedContact = id ? {...previousContact, ...data} : data;
+  const indexUpdates = guideIndexPatch(contactId, previousContact, updatedContact);
+  const updates = {...indexUpdates};
+  if(id){
+    for(const [field,value] of Object.entries(data)){
+      if(JSON.stringify(previousContact?.[field]) !== JSON.stringify(value)) updates[`contacts/${id}/${field}`] = value;
+    }
+  } else updates['contacts/'+contactId] = updatedContact;
   await writeData(()=>db.ref().update(updates), ()=>{
     closeModal('contactModal', true);
     contacts[contactId] = updatedContact;
-    if(pagedMode) refreshAfterMutation('contacts');
+    if(pagedMode) refreshAfterMutation('contacts',{membershipChanged:!id || Object.keys(indexUpdates).length>0});
   });
 }
 

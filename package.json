@@ -2,7 +2,7 @@
   "name": "connector-web",
   "private": true,
   "scripts": {
-    "test": "node --test tests/app.test.js tests/auth.test.js",
+    "test": "node --test tests/app.test.js tests/auth.test.js tests/cost.test.js",
     "test:rules": "firebase emulators:exec --project demo-connector --only database 'node --test tests/rules.test.mjs'"
   },
   "devDependencies": {

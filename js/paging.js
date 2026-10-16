@@ -1,10 +1,7 @@
 const PAGE_SIZE = 15;
 let pagedMode = false;
-let fullDataLoaded = false;
-let fullDataPromise = null;
 let pagingGeneration = 0;
 const pageState = {};
-const pageWatchers = {};
 const refreshingKinds = new Set();
 let calendarApptIds = [];
 let calendarValidationIds = [];
@@ -16,10 +13,7 @@ function freshPage(){ return {ids:[], cursor:null, hasMore:true, loading:false, 
 function resetPagedData(){
   pagingGeneration++;
   pagedMode = false;
-  fullDataLoaded = false;
-  fullDataPromise = null;
   for(const key of ['mine','all','upcoming','archive','validations']) pageState[key] = freshPage();
-  Object.keys(pageWatchers).forEach(key=>{ delete pageWatchers[key]; });
   refreshingKinds.clear();
   calendarApptIds = [];
   calendarValidationIds = [];
@@ -61,29 +55,17 @@ function minuteKey(date){
   return local.toISOString().slice(0,16);
 }
 
-function watchFirstPage(kind, query, refreshKind){
-  if(pageWatchers[kind]) return;
-  let initial = true;
-  const callback = ()=>{
-    if(initial){ initial = false; return; }
-    if(pagedMode && currentUser && !pageState[kind].loading) refreshPagedData(refreshKind);
-  };
-  query.on('value', callback, error=>{
-    console.error(`${kind} live page failed:`,error);
-    handleDatabaseError(error, '실시간 목록을 갱신하지 못했습니다. 새로고침 후 다시 시도해주세요.');
-  });
-  subscriptions.push({ref:query, callback});
-  pageWatchers[kind] = true;
-}
-
-async function readPage(path, field, direction, cursor, lowerBound, upperBound){
+async function readPage(path, field, direction, cursor, lowerBound, upperBound, kind=null){
   let query = field === '$value' ? db.ref(path).orderByValue() : db.ref(path).orderByChild(field);
   const ascending = direction === 'asc';
   if(cursor) query = ascending ? query.startAt(cursor.value, cursor.key) : query.endAt(cursor.value, cursor.key);
   else if(lowerBound) query = query.startAt(lowerBound);
   else if(upperBound) query = query.endAt(upperBound);
   query = ascending ? query.limitToFirst(PAGE_SIZE + (cursor ? 2 : 1)) : query.limitToLast(PAGE_SIZE + (cursor ? 2 : 1));
-  let entries = snapshotEntries(await query.once('value'));
+  const snapshot = kind && !cursor
+    ? await firstPageSnapshot(kind,path,field,direction,lowerBound,upperBound)
+    : await query.once('value');
+  let entries = snapshotEntries(snapshot);
   if(cursor) entries = entries.filter(entry=>entry.key !== cursor.key);
   if(!ascending) entries.reverse();
   const hasMore = entries.length > PAGE_SIZE;
@@ -93,21 +75,23 @@ async function readPage(path, field, direction, cursor, lowerBound, upperBound){
 }
 
 async function fetchContact(id){
-  if(contacts[id]) return contacts[id];
-  const value = (await db.ref('contacts/'+id).once('value')).val();
-  if(value) contacts[id] = value;
-  return value;
+  if(!id) return null;
+  if(completeCollections.has('contacts')) return contacts[id] || null;
+  const entry = liveQuery('record:contacts:'+id,id,db.ref('contacts/'+id),snapshot=>{
+    if(completeCollections.has('contacts')) return;
+    const value = snapshot.val();
+    if(value) contacts[id] = value;
+    else {
+      delete contacts[id];
+      for(const kind of ['mine','all']) if(pageState[kind].ready && pageState[kind].ids.includes(id)) queuePageRefresh(kind);
+    }
+  });
+  await entry.promise;
+  return contacts[id] || null;
 }
 
 async function fetchRelatedForContact(id){
-  const [apptSnap, validationSnap] = await Promise.all([
-    db.ref('appointments').orderByChild('contactId').equalTo(id).once('value'),
-    db.ref('validations').orderByChild('contactId').equalTo(id).once('value'),
-  ]);
-  Object.keys(appointments).forEach(key=>{ if(appointments[key].contactId===id) delete appointments[key]; });
-  Object.keys(validations).forEach(key=>{ if(validations[key].contactId===id) delete validations[key]; });
-  Object.assign(appointments, apptSnap.val() || {});
-  Object.assign(validations, validationSnap.val() || {});
+  await Promise.all([fetchRelatedCollection('appointments',id),fetchRelatedCollection('validations',id)]);
 }
 
 function guideIndexPaths(id, contact){
@@ -130,21 +114,24 @@ function guideIndexPaths(id, contact){
 
 function guideIndexPatch(id, oldContact, newContact){
   const patch = {};
-  guideIndexPaths(id,oldContact).forEach(path=>{ patch[path] = null; });
-  guideIndexPaths(id,newContact).forEach(path=>{ patch[path] = newContact.connectAt || ''; });
+  const before = new Map(guideIndexPaths(id,oldContact).map(path=>[path,oldContact.connectAt || '']));
+  const after = new Map(guideIndexPaths(id,newContact).map(path=>[path,newContact.connectAt || '']));
+  for(const path of new Set([...before.keys(),...after.keys()])){
+    if(before.get(path) !== after.get(path)) patch[path] = after.has(path) ? after.get(path) : null;
+  }
   return patch;
 }
 
 async function loadContactPage(kind){
   const page = pageState[kind];
-  if(!pagedMode || page.loading || !page.hasMore) return;
+  if(!pagedMode || hasFullData('contacts') || page.loading || !page.hasMore) return;
   page.loading = true;
   document.getElementById(kind==='mine'?'contactMore':'allContactMore').disabled = true;
   const generation = pagingGeneration;
   try {
     const mine = kind === 'mine';
     const path = mine ? `guideContacts/${guideIndexKey(currentUser)}/all` : 'contacts';
-    const result = await readPage(path, mine ? '$value' : 'connectAt', 'desc', page.cursor);
+    const result = await readPage(path, mine ? '$value' : 'connectAt', 'desc', page.cursor, null, null, kind);
     if(generation !== pagingGeneration) return;
     for(const item of result.items){
       if(!mine) contacts[item.key] = item.value;
@@ -159,26 +146,22 @@ async function loadContactPage(kind){
     loadState.contacts = true;
     renderAll();
     updateLoadingStatus();
-    if(!pageWatchers[kind]){
-      const query = mine
-        ? db.ref(path).orderByValue().limitToLast(PAGE_SIZE)
-        : db.ref(path).orderByChild('connectAt').limitToLast(PAGE_SIZE);
-      watchFirstPage(kind,query,'contacts');
-    }
+
   } catch(error){
+    if(generation !== pagingGeneration) return;
     console.error('Contact page failed:', error);
     handleDatabaseError(error, '연결자 목록을 불러오지 못했습니다. 다시 시도해주세요.');
-  } finally { page.loading = false; document.getElementById(kind==='mine'?'contactMore':'allContactMore').disabled = false; }
+  } finally { page.loading = false; pruneDataQueries(); drainPageRefreshes(); document.getElementById(kind==='mine'?'contactMore':'allContactMore').disabled = false; }
 }
 
 async function ensureAppointmentData(){
-  if(!pagedMode || pageState.upcoming.ready || pageState.upcoming.loading) return;
+  if(!pagedMode || hasFullData('appointments') || pageState.upcoming.ready || pageState.upcoming.loading) return;
   await loadAppointmentPage('upcoming');
 }
 
 async function loadAppointmentPage(kind){
   const page = pageState[kind];
-  if(!pagedMode || page.loading || !page.hasMore) return;
+  if(!pagedMode || hasFullData('appointments') || page.loading || !page.hasMore) return;
   page.loading = true;
   const generation = pagingGeneration;
   try {
@@ -186,7 +169,7 @@ async function loadAppointmentPage(kind){
     const now = new Date();
     const nowKey = minuteKey(now);
     const archiveBound = minuteKey(new Date(now.getTime()-60_000));
-    const result = await readPage('appointments','apptAt',upcoming ? 'asc' : 'desc',page.cursor,upcoming ? nowKey : null,upcoming ? null : archiveBound);
+    const result = await readPage('appointments','apptAt',upcoming ? 'asc' : 'desc',page.cursor,upcoming ? nowKey : null,upcoming ? null : archiveBound, kind);
     if(generation !== pagingGeneration) return;
     const items = result.items;
     for(const item of items) appointments[item.key] = item.value;
@@ -198,36 +181,34 @@ async function loadAppointmentPage(kind){
     page.ready = true;
     loadState.appointments = true;
     renderAppointments(); renderContacts(); renderAllContacts();
-    if(upcoming && !pageWatchers.upcoming){
-      const query = db.ref('appointments').orderByChild('apptAt').startAt(nowKey).limitToFirst(PAGE_SIZE);
-      watchFirstPage('upcoming',query,'appointments');
-    }
+
   } catch(error){
+    if(generation !== pagingGeneration) return;
     console.error('Appointment page failed:', error);
     handleDatabaseError(error, '약속 목록을 불러오지 못했습니다. 다시 시도해주세요.');
-  } finally { page.loading = false; }
+  } finally { page.loading = false; pruneDataQueries(); drainPageRefreshes(); }
 }
 
 async function ensureArchiveData(){
-  if(pagedMode && !pageState.archive.ready) await loadAppointmentPage('archive');
+  if(pagedMode && !hasFullData('appointments') && !pageState.archive.ready) await loadAppointmentPage('archive');
 }
 
 async function ensureValidationData(){
-  if(!pagedMode || pageState.validations.ready || pageState.validations.loading) return;
+  if(!pagedMode || hasFullData('validations') || pageState.validations.ready || pageState.validations.loading) return;
   await loadValidationPage();
 }
 
 async function loadValidationPage(){
   const page = pageState.validations;
-  if(!pagedMode || page.loading || !page.hasMore) return;
+  if(!pagedMode || hasFullData('validations') || page.loading || !page.hasMore) return;
   page.loading = true;
   const generation = pagingGeneration;
   try {
-    const result = await readPage('validationSummaries','latestDate','desc',page.cursor);
+    const result = await readPage('validationSummaries','latestDate','desc',page.cursor,null,null,'validations');
     if(generation !== pagingGeneration) return;
     await Promise.all(result.items.map(async item=>{
       await fetchContact(item.key);
-      await fetchRelatedForContact(item.key);
+      await fetchRelatedCollection('validations',item.key);
     }));
     if(generation !== pagingGeneration) return;
     page.ids.push(...result.items.map(item=>item.key).filter(id=>contacts[id] && !page.ids.includes(id)));
@@ -236,62 +217,82 @@ async function loadValidationPage(){
     page.ready = true;
     loadState.validations = true;
     renderValidations();
-    if(!pageWatchers.validations){
-      const query = db.ref('validationSummaries').orderByChild('latestDate').limitToLast(PAGE_SIZE);
-      watchFirstPage('validations',query,'validations');
-    }
+
   } catch(error){
+    if(generation !== pagingGeneration) return;
     console.error('Validation page failed:', error);
     handleDatabaseError(error, '유효 목록을 불러오지 못했습니다. 다시 시도해주세요.');
-  } finally { page.loading = false; }
+  } finally { page.loading = false; pruneDataQueries(); drainPageRefreshes(); }
 }
 
 async function loadAppointmentMonth(){
   if(!pagedMode || !document.getElementById('apptCalendarPanel').open) return;
+  if(hasFullData('appointments')){ renderAppointments(); return; }
   ensureCalendarState();
   const generation = pagingGeneration;
   const request = ++appointmentMonthRequest;
   const month = `${calYear}-${String(calMonth+1).padStart(2,'0')}`;
-  const snapshot = await db.ref('appointments').orderByChild('apptDate').startAt(month+'-01').endAt(month+'-31').once('value');
-  if(generation !== pagingGeneration || request !== appointmentMonthRequest || month !== `${calYear}-${String(calMonth+1).padStart(2,'0')}`) return;
-  const entries = snapshotEntries(snapshot);
-  calendarApptIds = entries.map(item=>item.key);
-  for(const item of entries) appointments[item.key] = item.value;
-  await Promise.all(entries.map(item=>fetchContact(item.value.contactId)));
+  const entry = liveQuery('month:appointments',month,
+    db.ref('appointments').orderByChild('apptDate').startAt(month+'-01').endAt(month+'-31'),(snapshot,_initial,resource)=>{
+      const entries = snapshotEntries(snapshot);
+      const ids = new Set(entries.map(item=>item.key));
+      for(const id of calendarApptIds){
+        if(!ids.has(id) && appointments[id]?.apptDate?.startsWith(month)) delete appointments[id];
+      }
+      calendarApptIds = [...ids];
+      for(const item of entries) appointments[item.key] = item.value;
+      resource.hydration = Promise.all(entries.map(item=>fetchContact(item.value.contactId))).then(()=>{
+        if(generation === pagingGeneration && month === `${calYear}-${String(calMonth+1).padStart(2,'0')}`) renderAppointments();
+      }).catch(error=>{ if(generation===pagingGeneration) handleDatabaseError(error,'달력 기록을 불러오지 못했습니다.'); });
+    });
+  try { await entry.promise; await entry.hydration; }
+  catch(error){
+    if(generation===pagingGeneration && error.code!=='SESSION_CHANGED') handleDatabaseError(error,'달력 기록을 불러오지 못했습니다.');
+    return;
+  }
   if(generation === pagingGeneration && request === appointmentMonthRequest) renderAppointments();
 }
 
 async function loadValidationMonth(){
   if(!pagedMode || !document.getElementById('validationCalendarPanel').open) return;
+  if(hasFullData('validations')){ renderValidations(); return; }
   ensureValidationCalendarState();
   const generation = pagingGeneration;
   const request = ++validationMonthRequest;
   const month = `${vCalYear}-${String(vCalMonth+1).padStart(2,'0')}`;
-  const snapshot = await db.ref('validationSummaries').orderByChild('firstDate').startAt(month+'-01').endAt(month+'-31').once('value');
-  if(generation !== pagingGeneration || request !== validationMonthRequest || month !== `${vCalYear}-${String(vCalMonth+1).padStart(2,'0')}`) return;
-  const entries = snapshotEntries(snapshot);
-  calendarValidationIds = entries.map(item=>item.key);
-  await Promise.all(entries.map(async item=>{ await fetchContact(item.key); await fetchRelatedForContact(item.key); }));
+  const entry = liveQuery('month:validations',month,
+    db.ref('validationSummaries').orderByChild('firstDate').startAt(month+'-01').endAt(month+'-31'),(snapshot,_initial,resource)=>{
+      const entries = snapshotEntries(snapshot);
+      calendarValidationIds = entries.map(item=>item.key);
+      resource.hydration = Promise.all(entries.map(async item=>{
+        await fetchContact(item.key);
+        await fetchRelatedCollection('validations',item.key);
+      })).then(()=>{
+        if(generation===pagingGeneration && month===`${vCalYear}-${String(vCalMonth+1).padStart(2,'0')}`) renderValidations();
+      }).catch(error=>{ if(generation===pagingGeneration) handleDatabaseError(error,'달력 기록을 불러오지 못했습니다.'); });
+    });
+  try { await entry.promise; await entry.hydration; }
+  catch(error){
+    if(generation===pagingGeneration && error.code!=='SESSION_CHANGED') handleDatabaseError(error,'달력 기록을 불러오지 못했습니다.');
+    return;
+  }
   if(generation === pagingGeneration && request === validationMonthRequest) renderValidations();
 }
 
-async function ensureFullData(){
-  if(!pagedMode || fullDataLoaded) return;
-  if(fullDataPromise) return fullDataPromise;
+async function ensureFullData(kind='contacts'){
+  if(!pagedMode || hasFullData(kind)) return;
   const generation = pagingGeneration;
   setAppStatus('전체 검색 데이터를 불러오는 중입니다.', 'progress');
-  fullDataPromise = Promise.all(['contacts','appointments','validations'].map(path=>db.ref(path).once('value'))).then(snapshots=>{
+  try {
+    const sources = kind==='contacts' ? ['contacts'] : ['contacts',kind];
+    await Promise.all(sources.map(readFullCollection));
     if(generation !== pagingGeneration) return;
-    [contacts,appointments,validations] = snapshots.map(snap=>snap.val() || {});
-    fullDataLoaded = true;
-    loadState.contacts = loadState.appointments = loadState.validations = true;
-    setAppStatus('');
+    if(document.getElementById('appStatus').textContent==='전체 검색 데이터를 불러오는 중입니다.') setAppStatus('');
     renderAll();
-  }).catch(error=>{
-    console.error('Full search failed:', error);
-    handleDatabaseError(error, '전체 검색 데이터를 불러오지 못했습니다.');
-  }).finally(()=>{ fullDataPromise = null; });
-  return fullDataPromise;
+  } catch(error){
+    if(generation !== pagingGeneration) return;
+    handleDatabaseError(error,'전체 검색 데이터를 불러오지 못했습니다.');
+  }
 }
 
 function needsFullContactData(mine){
@@ -303,10 +304,19 @@ function needsFullContactData(mine){
 }
 
 function maybeLoadFullData(){
-  if(!pagedMode || fullDataLoaded) return;
-  if(needsFullContactData(true) || needsFullContactData(false)
-    || document.getElementById('apptSearch').value.trim()
-    || document.getElementById('validationSearch').value.trim()) ensureFullData();
+  if(!pagedMode) return;
+  if(searchLoadTimer) clearTimeout(searchLoadTimer);
+  searchLoadTimer = setTimeout(()=>{
+    searchLoadTimer = null;
+    if(document.getElementById('contactsView').classList.contains('active')){
+      const mine = document.getElementById('myContactsBlock').classList.contains('active');
+      if(needsFullContactData(mine)) ensureFullData('contacts');
+    } else if(document.getElementById('appointmentsView').classList.contains('active')){
+      if(document.getElementById('apptSearch').value.trim()) ensureFullData('appointments');
+    } else if(document.getElementById('validationsView').classList.contains('active')){
+      if(document.getElementById('validationSearch').value.trim()) ensureFullData('validations');
+    }
+  },200);
 }
 
 function observeMoreButtons(){
@@ -321,79 +331,45 @@ function observeMoreButtons(){
 async function refreshPagedData(kind){
   if(!pagedMode || refreshingKinds.has(kind)) return;
   refreshingKinds.add(kind);
+  const generation = pagingGeneration;
   try {
-    if(fullDataLoaded){
-      fullDataLoaded = false;
-      await ensureFullData();
-      return;
+    const group = kind==='contacts' ? ['mine','all'] : kind==='appointments' ? ['upcoming','archive'] : [kind];
+    for(const key of group){
+      const type = key==='mine' || key==='all' ? 'contacts' : key==='validations' ? 'validations' : 'appointments';
+      if(hasFullData(type)) continue;
+      if(key==='all' && !pageState.all.ready && !document.getElementById('allContactsBlock').classList.contains('active')) continue;
+      if(key==='archive' && !pageState.archive.ready && !archiveOpen) continue;
+      if(key==='validations' && !pageState.validations.ready && !document.getElementById('validationsView').classList.contains('active')) continue;
+      if(key==='upcoming' && !pageState.upcoming.ready && !document.getElementById('appointmentsView').classList.contains('active')) continue;
+      const count = key==='mine' || key==='all' ? contactLimits[key] : key==='upcoming' ? apptLimit : key==='archive' ? archiveLimit : validationLimit;
+      pageState[key] = freshPage();
+      const load = key==='mine' || key==='all' ? ()=>loadContactPage(key)
+        : key==='validations' ? loadValidationPage : ()=>loadAppointmentPage(key);
+      await load();
+      while(generation===pagingGeneration && pageState[key].hasMore && pageState[key].ids.length<count){
+        const before = pageState[key].ids.length;
+        await load();
+        if(pageState[key].ids.length===before) break;
+      }
+      if(generation !== pagingGeneration) return;
     }
-    if(kind==='contacts'){
-      const mineCount = contactLimits.mine;
-      const allCount = contactLimits.all;
-      const allWasLoaded = pageState.all.ready;
-      pageState.mine = freshPage(); pageState.all = freshPage();
-      contactLimits.mine = contactLimits.all = 15;
-      await loadContactPage('mine');
-      while(pageState.mine.hasMore && pageState.mine.ids.length < mineCount){
-        const before = pageState.mine.ids.length;
-        contactLimits.mine += 15;
-        await loadContactPage('mine');
-        if(pageState.mine.ids.length === before) break;
-      }
-      if(allWasLoaded || document.getElementById('allContactsBlock').classList.contains('active')){
-        await loadContactPage('all');
-        while(pageState.all.hasMore && pageState.all.ids.length < allCount){
-          const before = pageState.all.ids.length;
-          contactLimits.all += 15;
-          await loadContactPage('all');
-          if(pageState.all.ids.length === before) break;
-        }
-      }
-    } else if(kind==='appointments'){
-      const upcomingCount = apptLimit;
-      const archiveCount = archiveLimit;
-      const archiveWasLoaded = pageState.archive.ready;
-      pageState.upcoming = freshPage(); pageState.archive = freshPage();
-      apptLimit = archiveLimit = 15;
-      await loadAppointmentPage('upcoming');
-      while(pageState.upcoming.hasMore && pageState.upcoming.ids.length < upcomingCount){
-        const before = pageState.upcoming.ids.length;
-        apptLimit += 15;
-        await loadAppointmentPage('upcoming');
-        if(pageState.upcoming.ids.length === before) break;
-      }
-      if(archiveWasLoaded || archiveOpen){
-        await loadAppointmentPage('archive');
-        while(pageState.archive.hasMore && pageState.archive.ids.length < archiveCount){
-          const before = pageState.archive.ids.length;
-          archiveLimit += 15;
-          await loadAppointmentPage('archive');
-          if(pageState.archive.ids.length === before) break;
-        }
-      }
-      await loadAppointmentMonth();
-    } else if(kind==='validations'){
-      const count = validationLimit;
-      pageState.validations = freshPage();
-      validationLimit = 15;
-      await loadValidationPage();
-      while(pageState.validations.hasMore && pageState.validations.ids.length < count){
-        const before = pageState.validations.ids.length;
-        validationLimit += 15;
-        await loadValidationPage();
-        if(pageState.validations.ids.length === before) break;
-      }
-      await loadValidationMonth();
-    }
-  } finally { refreshingKinds.delete(kind); }
+  } finally { refreshingKinds.delete(kind); drainPageRefreshes(); }
 }
 
-async function refreshAfterMutation(...kinds){
+function refreshAfterMutation(...kinds){
   if(!pagedMode) return;
-  if(fullDataLoaded){
-    fullDataLoaded = false;
-    await ensureFullData();
-    return;
+  const options = typeof kinds.at(-1)==='object' ? kinds.pop() : {};
+  queueDataRender();
+  if(options.membershipChanged === false) return;
+  for(const kind of new Set(kinds)){
+    if(kind==='contacts' && !hasFullData('contacts')){
+      queuePageRefresh('mine');
+      if(pageState.all.ready) queuePageRefresh('all');
+    } else if(kind==='appointments' && !hasFullData('appointments')){
+      if(pageState.upcoming.ready) queuePageRefresh('upcoming');
+      if(pageState.archive.ready) queuePageRefresh('archive');
+    } else if(kind==='validations' && !hasFullData('validations') && pageState.validations.ready){
+      queuePageRefresh('validations');
+    }
   }
-  for(const kind of [...new Set(kinds)]) await refreshPagedData(kind);
 }

@@ -58,7 +58,7 @@ function initApp(){
 
   appointmentTimer = setInterval(()=>{
     renderAppointments();
-    if(pagedMode && pageState.upcoming.ready && pageState.upcoming.ids.some(id=>appointments[id]?.apptAt < todayDateValue()+'T'+nowTimeValue())) refreshPagedData('appointments');
+    if(pagedMode && !hasFullData('appointments') && pageState.upcoming.ready && pageState.upcoming.ids.some(id=>appointments[id]?.apptAt < todayDateValue()+'T'+nowTimeValue())){ releaseLiveQuery('page:upcoming'); queuePageRefresh('upcoming'); }
   }, 30000);
 }
 
@@ -100,6 +100,7 @@ function stopApp(){
   contacts = {};
   appointments = {};
   validations = {};
+  resetDataCache();
   resetPagedData();
   setAppStatus('');
 }

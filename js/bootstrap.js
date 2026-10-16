@@ -60,11 +60,11 @@ document.addEventListener('input', event=>{
   const filter = event.target.dataset.contactFilter;
   if(filter==='appt'){
     populateContactSelect(document.getElementById('aContactId').value, event.target.value);
-    if(pagedMode && !fullDataLoaded && event.target.value.trim()) ensureFullData().then(()=>populateContactSelect(document.getElementById('aContactId').value, event.target.value));
+    if(pagedMode && !hasFullData('contacts') && event.target.value.trim()) ensureFullData('contacts').then(()=>populateContactSelect(document.getElementById('aContactId').value, event.target.value));
   }
   if(filter==='validation'){
     populateValidationContactSelect(document.getElementById('vContactId').value, event.target.value);
-    if(pagedMode && !fullDataLoaded && event.target.value.trim()) ensureFullData().then(()=>populateValidationContactSelect(document.getElementById('vContactId').value, event.target.value));
+    if(pagedMode && !hasFullData('contacts') && event.target.value.trim()) ensureFullData('contacts').then(()=>populateValidationContactSelect(document.getElementById('vContactId').value, event.target.value));
   }
 });
 document.addEventListener('change', event=>{
@@ -72,8 +72,14 @@ document.addEventListener('change', event=>{
   const filter = event.target.dataset.filter;
   if(filter && renderActions[filter]){ renderActions[filter](); maybeLoadFullData(); }
 });
-document.getElementById('apptCalendarPanel').addEventListener('toggle', event=>{ if(event.target.open) loadAppointmentMonth(); });
-document.getElementById('validationCalendarPanel').addEventListener('toggle', event=>{ if(event.target.open) loadValidationMonth(); });
+document.getElementById('apptCalendarPanel').addEventListener('toggle', event=>{
+  if(event.target.open) loadAppointmentMonth();
+  else { releaseLiveQuery('month:appointments'); calendarApptIds=[]; pruneDataQueries(); }
+});
+document.getElementById('validationCalendarPanel').addEventListener('toggle', event=>{
+  if(event.target.open) loadValidationMonth();
+  else { releaseLiveQuery('month:validations'); calendarValidationIds=[]; pruneDataQueries(); }
+});
 
 if(typeof history !== 'undefined' && 'scrollRestoration' in history) history.scrollRestoration = 'manual';
 if(typeof window !== 'undefined') window.addEventListener('load',()=>window.scrollTo(0,0),{once:true});
