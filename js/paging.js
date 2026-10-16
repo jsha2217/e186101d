@@ -46,7 +46,7 @@ async function initializePagedData(){
     observeMoreButtons();
   } catch(error){
     console.error('Pagination initialization failed:', error);
-    if(generation === pagingGeneration && currentUser) setAppStatus('데이터를 불러오지 못했습니다. 새로고침 후 다시 시도해주세요.', 'error');
+    if(generation === pagingGeneration && currentUser) handleDatabaseError(error, '데이터를 불러오지 못했습니다. 새로고침 후 다시 시도해주세요.');
   }
 }
 
@@ -70,7 +70,7 @@ function watchFirstPage(kind, query, refreshKind){
   };
   query.on('value', callback, error=>{
     console.error(`${kind} live page failed:`,error);
-    setAppStatus('실시간 목록을 갱신하지 못했습니다. 새로고침 후 다시 시도해주세요.', 'error');
+    handleDatabaseError(error, '실시간 목록을 갱신하지 못했습니다. 새로고침 후 다시 시도해주세요.');
   });
   subscriptions.push({ref:query, callback});
   pageWatchers[kind] = true;
@@ -167,7 +167,7 @@ async function loadContactPage(kind){
     }
   } catch(error){
     console.error('Contact page failed:', error);
-    setAppStatus('연결자 목록을 불러오지 못했습니다. 다시 시도해주세요.', 'error');
+    handleDatabaseError(error, '연결자 목록을 불러오지 못했습니다. 다시 시도해주세요.');
   } finally { page.loading = false; document.getElementById(kind==='mine'?'contactMore':'allContactMore').disabled = false; }
 }
 
@@ -204,7 +204,7 @@ async function loadAppointmentPage(kind){
     }
   } catch(error){
     console.error('Appointment page failed:', error);
-    setAppStatus('약속 목록을 불러오지 못했습니다. 다시 시도해주세요.', 'error');
+    handleDatabaseError(error, '약속 목록을 불러오지 못했습니다. 다시 시도해주세요.');
   } finally { page.loading = false; }
 }
 
@@ -242,7 +242,7 @@ async function loadValidationPage(){
     }
   } catch(error){
     console.error('Validation page failed:', error);
-    setAppStatus('유효 목록을 불러오지 못했습니다. 다시 시도해주세요.', 'error');
+    handleDatabaseError(error, '유효 목록을 불러오지 못했습니다. 다시 시도해주세요.');
   } finally { page.loading = false; }
 }
 
@@ -289,7 +289,7 @@ async function ensureFullData(){
     renderAll();
   }).catch(error=>{
     console.error('Full search failed:', error);
-    setAppStatus('전체 검색 데이터를 불러오지 못했습니다.', 'error');
+    handleDatabaseError(error, '전체 검색 데이터를 불러오지 못했습니다.');
   }).finally(()=>{ fullDataPromise = null; });
   return fullDataPromise;
 }

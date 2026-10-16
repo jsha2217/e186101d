@@ -4,24 +4,28 @@
 파일 구성:
 - `index.html` — 화면 구조와 정적 스크립트 연결.
 - `styles.css` — 전체 화면 스타일.
-- `js/core.js` — 세션, Firebase 구독, 쓰기 오류 처리, 공용 렌더 유틸.
+- `js/core.js` — Firebase 구독, 쓰기 오류 처리, 공용 렌더 유틸.
+- `js/auth.js` — Firebase 공용 계정 인증, 자유 이름 입력, 자동 로그인, 로그아웃 및 권한 만료 처리.
 - `js/contacts.js`, `js/appointments.js`, `js/validations.js` — 기능별 화면·입력 로직.
 - `js/bootstrap.js` — 선언형 `data-action`/`data-render` 이벤트 연결과 자동 로그인 시작.
 - `js/paging.js` — Firebase 15건 조회, 스크롤 추가 로딩, 월간 달력 범위 조회, 조회 인덱스 전환.
 - `tests/app.test.js` — 모의 Firebase 기반 핵심 동작 테스트 (`node --test tests/app.test.js`).
 - `firebase.json`, `.firebaserc`, `database.rules.json` — Firebase RTDB 설정 (Hosting 설정은 없음, 아래 7번 참고)
-- `vendor/firebase/` — Firebase SDK(`firebase-app-compat.js`, `firebase-database-compat.js`)를 CDN이 아닌 로컬 파일로 벤더링(7번 참고).
+- `vendor/firebase/` — Firebase SDK(`firebase-app-compat.js`, `firebase-auth-compat.js`, `firebase-database-compat.js`)를 CDN이 아닌 로컬 파일로 벤더링(7번 참고).
 - `assets/home-bg.jpg` — 잠금화면 배경 이미지.
 - `scripts/set-baptism.sh` — `contacts.baptism` 필드를 터미널에서 직접 조작하는 스크립트(2번 데이터 모델 참고). 인자 없이 실행하면 백필, `<contactId> <0|1>`로 실행하면 특정 연결자 값 설정.
 - `scripts/migrate-pagination.mjs` — 기존 RTDB 기록의 목록 인덱스 및 약속 복합 날짜를 백필. 기본은 읽기 전용, `--apply`일 때만 기록.
 
 ## 1. 인증 (잠금 화면)
 
-- 로그인은 "이름"(자유 텍스트, 사용자 식별자 역할) + "전체 공용 비밀번호" 2개 입력.
-- 비밀번호를 SHA-256 해시하여 하드코딩된 `CORRECT_HASH`와 비교. 이름 자체는 검증하지 않고 단순히 `currentUser`로 저장되어 이후 모든 "내 연결자/약속" 필터링의 키로 사용됨 (즉 이름을 다르게 입력하면 다른 사람 행세 가능 — 진짜 인증이 아니라 "우리 팀만 아는 공용 비밀번호 + 자기 이름 자율 신고" 방식).
-- 로그인 성공 시 잠금화면 숨기고 `initApp()` 호출, 인사말(`복 많이 받으세요, {이름}님`) 표시.
-- 로그아웃 시 Firebase 리스너와 30초 타이머를 해제하고 메모리의 데이터 스냅샷을 지움. 다른 이름으로 다시 로그인하면 새 구독과 사용자별 필터를 적용함.
-- 로그인 성공 시 이름을 `localStorage`(`connectorAuthUser`)에 저장함. 모든 스크립트가 로드된 뒤 `js/bootstrap.js`에서 저장값을 확인해 자동 로그인함. 로그아웃 시 저장값을 지움.
+- 로그인 화면은 기존처럼 "이름"(자유 입력, 표시/필터 기준) + "전체 공용 비밀번호"를 사용한다. 팀원들이 다른 이름으로 입장하는 것을 허용한다.
+- 비밀번호 검증은 브라우저 해시 비교가 아닌 Firebase Authentication 서버의 이메일/비밀번호 인증이다. 내부적으로 `connector-team@paw-hello-sy.invalid`, UID `connector-team` 공용 계정을 사용하며 이메일을 입력하거나 가입할 필요가 없다. 이메일/UID는 비밀이 아니며, 공용 비밀번호는 클라이언트 코드에 저장하지 않는다.
+- RTDB는 UID `connector-team`, password 로그인 제공자, `_security/minAuthTime` 이후의 인증 시각을 모두 확인한다. 다른 계정의 로그인/익명 인증/이름 변경만으로는 접근할 수 없다.
+- 로그인 성공 시 잠금화면을 숨기고 `initApp()`을 호출한다. 이름은 계속 `localStorage`의 `connectorAuthUser`에 저장하며, Firebase의 LOCAL 세션이 유효할 때에만 자동 입장한다. 이름만 저장된 구버전 사용자는 최초 한 번 기존 비밀번호를 다시 입력한다.
+- 로그아웃은 Firebase `signOut()`까지 수행하고, 리스너/타이머/메모리 스냅샷/저장 이름을 제거한다. 다른 기기의 팀원 세션에는 영향을 주지 않는다.
+- DB가 권한 거부를 반환하면 데이터를 비우고 비밀번호 재입력을 요청한다. 로그인 진행 중 로그아웃해도 뒤늦게 앱이 열리지 않는다.
+- 개인별 계정/권한 분리는 적용하지 않는다. 공용 계정의 성격상 같은 비밀번호를 아는 팀원은 기존처럼 공유 데이터를 조회/수정/삭제할 수 있다.
+- 별도 인증 서버/Cloud Functions/Blaze 플랜은 사용하지 않는다.
 
 ## 2. 데이터 모델 (Firebase RTDB 경로)
 
@@ -61,7 +65,7 @@
 ```
 
 - `validations`는 연결자당 **2차 이후** 회차만 저장한다. 1차는 별도 저장 없이 `contacts/{id}`의 `connectAt`/`topic`을 그대로 재사용(연결 등록 시점 = 1차 미팅으로 취급).
-- `database.rules.json`: `.read: true`, `.write: true` — 인증 없이 전체 공개/쓰기 가능한 규칙. 보안은 전적으로 클라이언트단 비밀번호 잠금에 의존(사실상 URL/DB endpoint를 아는 사람은 누구나 직접 접근 가능한 구조). `validations` 경로도 동일한 전체 공개 규칙을 그대로 상속받으므로 별도 규칙 추가 불필요.
+- `database.rules.json`: 루트는 읽기/쓰기 기본 차단. 지정된 팀 공용 계정의 `contacts`, `appointments`, `validations`, `validationSummaries`, `guideContacts` 접근만 허용하고, `meta/paginationVersion`은 읽기만 허용한다. 기존 조회 인덱스와 원자적 다중 경로 저장/삭제를 유지한다. `_security`와 그 외 경로는 관리자만 접근한다.
 
 ## 3. 실시간 동기화
 
@@ -159,10 +163,10 @@
 ## 7. Firebase 설정 & 배포
 
 - 프로젝트 ID: `paw-hello-sy`, RTDB 리전: `europe-west1`.
-- `firebaseConfig`(apiKey 포함)는 `js/core.js`에 있음. 클라이언트 앱의 설정값은 공개되며, RTDB 규칙이 완전 공개라 실제 접근 제어가 없음. 인증과 규칙 교체는 별도 데이터 접근 설계가 필요함.
+- `firebaseConfig`(apiKey 포함)는 `js/core.js`에 있음. 공개 클라이언트 설정값과 별개로 실제 접근은 Firebase Authentication과 RTDB 규칙이 제어한다. 공용 비밀번호/비밀번호 해시는 웹 코드에 포함하지 않는다.
 - Firebase SDK는 CDN(`gstatic.com`)이 아닌 `vendor/firebase/`에 로컬로 벤더링되어 있음 — 일부 Safari 콘텐츠 차단 확장(AdGuard, 1Blocker 등)이 `gstatic.com`/`googleapis.com` 요청을 도메인 단위로 차단해 SDK 로드 자체가 실패하고 데이터가 아예 렌더링되지 않는 문제가 있었음. 같은 origin에서 서빙하면 이 차단을 피할 수 있음.
-- 15건 조회를 적용할 때는 `database.rules.json`의 조회 인덱스를 Firebase에 배포하고, 코드 배포 후 `scripts/migrate-pagination.mjs --apply`로 기존 기록을 백필해야 한다. 백필 전에는 구버전 전체 조회를 유지한다.
-- `firebase.json`은 database rules 경로만 지정 — Hosting 설정은 없음. **실제 배포는 GitHub Pages**(`jsha2217/e186101d` 저장소, `master` 브랜치, 루트 경로) — https://jsha2217.github.io/e186101d/ 로 서비스되며, `master`에 push하면 별도 빌드/승인 절차 없이 자동 반영(보통 1~2분 내).
+- 15건 조회를 적용할 때는 `database.rules.json`의 조회 인덱스를 Firebase에 배포하고, 코드 배포 후 `firebase login`으로 관리자 인증 후 `node scripts/migrate-pagination.mjs --apply`로 기존 기록을 백필해야 한다. 백필 전에는 구버전 전체 조회를 유지한다.
+- `firebase.json`은 database rules 및 로컬 인증/DB 에뮬레이터를 설정 — Hosting 설정은 없음. **실제 배포는 GitHub Pages**(`jsha2217/e186101d` 저장소, `master` 브랜치, 루트 경로) — https://jsha2217.github.io/e186101d/ 로 서비스되며, `master`에 push하면 별도 빌드/승인 절차 없이 자동 반영(보통 1~2분 내).
 
 ## 8. 세션 변경 이력
 
@@ -219,3 +223,11 @@
 - 이후 DB 다운로드량을 줄이기 위해 15건 조회·스크롤 추가 로딩과 조회 인덱스 이전 코드를 추가했다. 2026-09-30에 조회 인덱스 규칙을 게시하고 226건의 연결자·130건의 약속·62건의 유효 기록을 백필한 뒤 `paginationVersion=1`을 설정했다. 기존에 열린 세션은 새로고침해야 페이지 조회로 전환된다.
 - 실서비스에서 연결자 15→30건, 전체 연결자 첫 15건, 유효 15→30명을 확인했다. 지난 약속 조회에서 Firebase가 빈 문자열 경계 키를 거부한 오류를 발견해, 직전 1분을 상한으로 쓰도록 수정했다.
 - GitHub Pages의 JS 캐시가 이전 `paging.js`를 유지하므로 `index.html`의 스크립트 URL에 버전 쿼리를 붙여 수정본을 새로 받도록 했다.
+
+### 2026-10-16 — 데이터베이스 공개 접근 제거
+
+- 이름/공용 비밀번호 화면, 자유 이름 입력, 전체 공유/검색/수정 권한을 유지하면서 Firebase Authentication 공용 계정으로 이전.
+- 기존 SHA-256 비밀번호를 Firebase의 SHA256(rounds=1) 사용자 가져오기로 이전하여 기존 비밀번호를 유지. 공개 JS의 비밀번호 해시 제거.
+- RTDB는 지정 UID + password 제공자 + 인증 시각을 확인하고, 앱에서 사용하는 경로만 허용. 인덱스와 여러 경로 동시 갱신 유지.
+- 침례 관리/페이지 인덱스 스크립트는 무인증 REST를 제거하고 Firebase CLI 관리자 세션으로 실행. 침례 명령 사용법 유지.
+- 비공개 백업 및 상세 운영 절차는 `SECURITY_OPERATIONS.md` 참고.

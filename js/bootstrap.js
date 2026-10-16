@@ -77,5 +77,4 @@ document.getElementById('validationCalendarPanel').addEventListener('toggle', ev
 
 if(typeof history !== 'undefined' && 'scrollRestoration' in history) history.scrollRestoration = 'manual';
 if(typeof window !== 'undefined') window.addEventListener('load',()=>window.scrollTo(0,0),{once:true});
-const savedUser = localStorage.getItem(AUTH_STORAGE_KEY);
-if(savedUser) enterApp(savedUser);
+startAuthentication();

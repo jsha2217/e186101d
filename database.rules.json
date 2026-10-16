@@ -1,14 +1,52 @@
 {
   "rules": {
-    ".read": true,
-    ".write": true,
-    "contacts": { ".indexOn": ["connectAt"] },
-    "appointments": { ".indexOn": ["apptAt", "apptDate", "contactId"] },
-    "validations": { ".indexOn": ["contactId"] },
-    "validationSummaries": { ".indexOn": ["latestDate", "firstDate"] },
+    ".read": false,
+    ".write": false,
+    "contacts": {
+      ".indexOn": [
+        "connectAt"
+      ],
+      ".read": "auth != null && auth.uid === 'connector-team' && auth.token.firebase.sign_in_provider === 'password' && root.child('_security/minAuthTime').isNumber() && auth.token.auth_time >= root.child('_security/minAuthTime').val()",
+      ".write": "auth != null && auth.uid === 'connector-team' && auth.token.firebase.sign_in_provider === 'password' && root.child('_security/minAuthTime').isNumber() && auth.token.auth_time >= root.child('_security/minAuthTime').val()"
+    },
+    "appointments": {
+      ".indexOn": [
+        "apptAt",
+        "apptDate",
+        "contactId"
+      ],
+      ".read": "auth != null && auth.uid === 'connector-team' && auth.token.firebase.sign_in_provider === 'password' && root.child('_security/minAuthTime').isNumber() && auth.token.auth_time >= root.child('_security/minAuthTime').val()",
+      ".write": "auth != null && auth.uid === 'connector-team' && auth.token.firebase.sign_in_provider === 'password' && root.child('_security/minAuthTime').isNumber() && auth.token.auth_time >= root.child('_security/minAuthTime').val()"
+    },
+    "validations": {
+      ".indexOn": [
+        "contactId"
+      ],
+      ".read": "auth != null && auth.uid === 'connector-team' && auth.token.firebase.sign_in_provider === 'password' && root.child('_security/minAuthTime').isNumber() && auth.token.auth_time >= root.child('_security/minAuthTime').val()",
+      ".write": "auth != null && auth.uid === 'connector-team' && auth.token.firebase.sign_in_provider === 'password' && root.child('_security/minAuthTime').isNumber() && auth.token.auth_time >= root.child('_security/minAuthTime').val()"
+    },
+    "validationSummaries": {
+      ".indexOn": [
+        "latestDate",
+        "firstDate"
+      ],
+      ".read": "auth != null && auth.uid === 'connector-team' && auth.token.firebase.sign_in_provider === 'password' && root.child('_security/minAuthTime').isNumber() && auth.token.auth_time >= root.child('_security/minAuthTime').val()",
+      ".write": "auth != null && auth.uid === 'connector-team' && auth.token.firebase.sign_in_provider === 'password' && root.child('_security/minAuthTime').isNumber() && auth.token.auth_time >= root.child('_security/minAuthTime').val()"
+    },
     "guideContacts": {
       "$guide": {
-        "$role": { ".indexOn": [".value"] }
+        "$role": {
+          ".indexOn": [
+            ".value"
+          ]
+        }
+      },
+      ".read": "auth != null && auth.uid === 'connector-team' && auth.token.firebase.sign_in_provider === 'password' && root.child('_security/minAuthTime').isNumber() && auth.token.auth_time >= root.child('_security/minAuthTime').val()",
+      ".write": "auth != null && auth.uid === 'connector-team' && auth.token.firebase.sign_in_provider === 'password' && root.child('_security/minAuthTime').isNumber() && auth.token.auth_time >= root.child('_security/minAuthTime').val()"
+    },
+    "meta": {
+      "paginationVersion": {
+        ".read": "auth != null && auth.uid === 'connector-team' && auth.token.firebase.sign_in_provider === 'password' && root.child('_security/minAuthTime').isNumber() && auth.token.auth_time >= root.child('_security/minAuthTime').val()"
       }
     }
   }

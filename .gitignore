@@ -1,2 +1,9 @@
 # Database exports contain personal contact information.
 /backups/
+node_modules/
+firebase-debug.log*
+database-debug.log*
+ui-debug.log*
+*-debug.log*
+.firebase/
+.security-private/

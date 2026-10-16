@@ -3,57 +3,10 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const path = require('node:path');
-const {webcrypto} = require('node:crypto');
 
 const root = path.join(__dirname, '..');
 
-function createApp(){
-  const elements = new Map();
-  const listeners = new Map();
-  const writes = [];
-  const alerts = [];
-  let rejectWrites = false;
-  let nextKey = 0;
-  const element = id=>{
-    if(!elements.has(id)){
-      const classes = new Set();
-      const attributes = new Map();
-      elements.set(id, {
-        value:'', textContent:'', innerHTML:'', style:{}, dataset:{}, scrollHeight:0, hidden:false, isConnected:true,
-        classList:{add:cls=>classes.add(cls), remove:cls=>classes.delete(cls), toggle:(cls,on)=>on ? classes.add(cls) : classes.delete(cls), contains:cls=>classes.has(cls)},
-        addEventListener(){}, querySelectorAll:()=>[], querySelector:()=>null, focus(){}, after(){}, remove(){},
-        setAttribute:(name,value)=>attributes.set(name,value),
-        getAttribute:name=>attributes.get(name) || null,
-        removeAttribute:name=>attributes.delete(name),
-      });
-    }
-    return elements.get(id);
-  };
-  const db = {ref(refPath=''){
-    return {
-      on(type, callback){ listeners.set(refPath, callback); },
-      off(type, callback){ if(listeners.get(refPath) === callback) listeners.delete(refPath); },
-      push(){ return {key:`new${++nextKey}`, set:data=>write('set', refPath, data)}; },
-      update:data=>write('update', refPath, data),
-      remove:()=>write('remove', refPath, null),
-    };
-  }};
-  function write(method, refPath, data){
-    writes.push({method, refPath, data});
-    return rejectWrites ? Promise.reject(new Error('offline')) : Promise.resolve();
-  }
-  const firebase = {apps:[], initializeApp(){ this.apps.push({}); }, database(){ return db; }};
-  const context = vm.createContext({
-    document:{getElementById:element, createElement:()=>element(`created${elements.size}`), body:element('body'), querySelectorAll:()=>[], addEventListener(){}},
-    firebase, localStorage:{getItem:()=>null, setItem(){}, removeItem(){}},
-    crypto:webcrypto, TextEncoder, console:{error(){}}, alert:message=>alerts.push(message),
-    confirm:()=>true, setInterval:()=>1, clearInterval(){}, setTimeout:()=>1, clearTimeout(){}, Date,
-  });
-  for(const file of ['core.js','contacts.js','appointments.js','validations.js','paging.js','bootstrap.js']){
-    vm.runInContext(fs.readFileSync(path.join(root,'js',file),'utf8'), context, {filename:file});
-  }
-  return {context, elements, element, listeners, writes, alerts, setReject:value=>{rejectWrites=value;}};
-}
+const {createApp} = require('./helpers/app.cjs');
 
 test('every rendered action has a delegated handler', ()=>{
   const app = createApp();
@@ -70,7 +23,7 @@ test('logout clears listeners and a different user sees the right contacts', ()=
   assert.equal(app.listeners.size, 3);
   vm.runInContext('logout()', app.context);
   assert.equal(app.listeners.size, 0);
-  vm.runInContext('enterApp("Sam")', app.context);
+  vm.runInContext('teamSessionReady=true; enterApp("Sam")', app.context);
   assert.equal(app.listeners.size, 3);
   vm.runInContext('loadState.contacts=true; contacts = {a:{name:"A",mainGuide:"Joy"},b:{name:"B",mainGuide:"Sam"}}; renderContacts()', app.context);
   assert.match(app.element('contactList').innerHTML, /B/);

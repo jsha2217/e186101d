@@ -1,25 +1,8 @@
-const CORRECT_HASH = "03b0bd366e8184f8d871c3a7c7cc26c73c25b54ff54c64b28b10b898242cdc8a";
-async function sha256(text){
-  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
-  return [...new Uint8Array(buf)].map(b=>b.toString(16).padStart(2,'0')).join('');
-}
-
 let currentUser = null;
 const AUTH_STORAGE_KEY = 'connectorAuthUser';
 
-async function login(){
-  const name = document.getElementById('nameInput').value.trim();
-  const pw = document.getElementById('pwInput').value;
-  const hash = pw ? await sha256(pw) : '';
-  if(!name || hash !== CORRECT_HASH){
-    document.getElementById('pwError').style.display = 'block';
-    return;
-  }
-  localStorage.setItem(AUTH_STORAGE_KEY, name);
-  enterApp(name);
-}
-
 function enterApp(name){
+  if(!teamSessionReady) return;
   currentUser = name;
   document.getElementById('pwError').style.display = 'none';
   document.getElementById('lockScreen').style.display = 'none';
@@ -27,17 +10,6 @@ function enterApp(name){
   document.getElementById('greeting').textContent = `복 많이 받으세요, ${currentUser}님`;
   initApp();
   renderAll();
-}
-
-function logout(){
-  closeAllModals();
-  stopApp();
-  currentUser = null;
-  localStorage.removeItem(AUTH_STORAGE_KEY);
-  document.getElementById('app').style.display = 'none';
-  document.getElementById('lockScreen').style.display = 'flex';
-  document.getElementById('nameInput').value = '';
-  document.getElementById('pwInput').value = '';
 }
 
 document.getElementById('pwInput').addEventListener('keydown', e=>{ if(e.key==='Enter') login(); });
@@ -75,8 +47,8 @@ function renderAll(){
 }
 
 function initApp(){
-  if(appInitialized) return;
-  if(!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+  if(appInitialized || !teamSessionReady) return;
+  initializeFirebase();
   db = firebase.database();
   appInitialized = true;
   Object.keys(loadState).forEach(key=>{ loadState[key] = false; });
@@ -114,7 +86,7 @@ function setAppStatus(message, type='info'){
 function subscribe(path, onValue){
   const ref = db.ref(path);
   const callback = snap=>{ if(currentUser) onValue(snap.val() || {}); };
-  const onError = error=>{ console.error(`Firebase ${path}:`, error); setAppStatus('데이터를 불러오지 못했습니다. 새로고침 후 다시 시도해주세요.', 'error'); };
+  const onError = error=>{ console.error(`Firebase ${path}:`, error); handleDatabaseError(error, '데이터를 불러오지 못했습니다. 새로고침 후 다시 시도해주세요.'); };
   ref.on('value', callback, onError);
   subscriptions.push({ref, callback});
 }
@@ -145,7 +117,7 @@ async function writeData(operation, onSuccess, label='저장'){
   } catch(error) {
     console.error('Firebase write failed:', error);
     const message = '요청을 완료하지 못했습니다. 연결 상태를 확인하고 다시 시도해주세요.';
-    setAppStatus(message, 'error');
+    handleDatabaseError(error, message);
     const top = modalStack.at(-1);
     if(top) setModalError(top.id, message);
     return false;

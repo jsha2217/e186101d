@@ -1,13 +1,11 @@
 #!/usr/bin/env node
 // 기존 RTDB 기록을 15건 단위 조회에 필요한 인덱스로 백필한다.
 // 기본 동작은 읽기 전용 점검이며, --apply일 때만 쓰기를 수행한다.
-const DB_URL = 'https://paw-hello-sy-default-rtdb.europe-west1.firebasedatabase.app';
+import {readAdmin, updateAdmin} from './admin-db.mjs';
 const apply = process.argv.includes('--apply');
 
 async function read(path){
-  const response = await fetch(`${DB_URL}/${path}.json`);
-  if(!response.ok) throw new Error(`${path}: HTTP ${response.status}`);
-  return await response.json() || {};
+  return await readAdmin(path) || {};
 }
 
 function guideKey(name){
@@ -77,8 +75,5 @@ console.log(JSON.stringify({contacts:Object.keys(contacts).length,
   writeRequested:apply},null,2));
 if(!apply) process.exit(0);
 
-const response = await fetch(`${DB_URL}/.json`,{
-  method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify(patch),
-});
-if(!response.ok) throw new Error(`Migration write failed: HTTP ${response.status}`);
+await updateAdmin(patch);
 console.log('페이지 조회 인덱스를 적용했습니다.');
